@@ -1,4 +1,4 @@
-FROM oven/bun:1
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
@@ -9,26 +9,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     libasound2 \
     xvfb \
-    x11vnc \
     fluxbox \
-    novnc \
-    websockify \
     wget \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY bun-server/package.json bun-server/bun.lock ./
-RUN bun install --frozen-lockfile
+COPY bun-server/package.json ./
+RUN npm install --no-audit --no-fund
 
 COPY bun-server/ ./
 
-RUN bunx playwright install chromium
+RUN npx playwright install chromium
 
 COPY bun-server/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV BUN_SERVER_PORT=3001
 
-EXPOSE 3001 6080
+EXPOSE 3001
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx", "index.ts"]

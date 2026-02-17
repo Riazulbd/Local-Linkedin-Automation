@@ -65,3 +65,32 @@ export async function incrementCount(
 ): Promise<void> {
   await supabase.rpc('increment_profile_count', { p_profile_id: id, p_field: field });
 }
+
+export async function setPendingTwoFACode(
+  supabase: SupabaseClient,
+  profileId: string,
+  code: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('linkedin_profiles')
+    .update({
+      pending_2fa_code: code,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', profileId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function getPendingTwoFAProfiles(
+  supabase: SupabaseClient
+): Promise<LinkedInProfile[]> {
+  const { data, error } = await supabase
+    .from('linkedin_profiles')
+    .select('*')
+    .eq('login_status', '2fa_pending')
+    .order('twofa_requested_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as LinkedInProfile[];
+}

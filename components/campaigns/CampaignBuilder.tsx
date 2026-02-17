@@ -10,23 +10,31 @@ interface CampaignBuilderProps {
   initialName?: string;
 }
 
+function normalizeStep(step: CampaignStep, index: number): CampaignStep {
+  const type = step.step_type ?? step.type ?? 'visit_profile';
+  return {
+    ...step,
+    step_type: type,
+    type,
+    step_order: index,
+    order: index,
+    config: step.config ?? {},
+  };
+}
+
 export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderProps) {
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState('');
   const [dailyNewLeads, setDailyNewLeads] = useState(20);
   const [profileIdsRaw, setProfileIdsRaw] = useState('');
-  const [folderIdsRaw, setFolderIdsRaw] = useState('');
+  const [folderId, setFolderId] = useState('');
   const [steps, setSteps] = useState<CampaignStep[]>(() => buildDefaultCampaignSequence());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const profileIds = useMemo(
-    () => profileIdsRaw.split(',').map((s) => s.trim()).filter(Boolean),
+    () => profileIdsRaw.split(',').map((value) => value.trim()).filter(Boolean),
     [profileIdsRaw]
-  );
-  const folderIds = useMemo(
-    () => folderIdsRaw.split(',').map((s) => s.trim()).filter(Boolean),
-    [folderIdsRaw]
   );
 
   async function handleSubmit(event: React.FormEvent) {
@@ -43,19 +51,20 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
       await onSubmit({
         name: name.trim(),
         description: description.trim() || undefined,
-        sequence: steps,
         daily_new_leads: dailyNewLeads,
+        folder_id: folderId.trim() || undefined,
         profile_ids: profileIds,
-        folder_ids: folderIds,
+        steps: steps.map((step, index) => normalizeStep(step, index)),
       });
+
       setName('');
       setDescription('');
       setDailyNewLeads(20);
       setProfileIdsRaw('');
-      setFolderIdsRaw('');
+      setFolderId('');
       setSteps(buildDefaultCampaignSequence());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create campaign');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Failed to create campaign');
     } finally {
       setIsSubmitting(false);
     }
@@ -66,7 +75,9 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
       ...prev,
       {
         id: `step_${Date.now()}`,
+        step_type: 'visit_profile',
         type: 'visit_profile',
+        step_order: prev.length,
         order: prev.length,
         config: {},
       },
@@ -74,13 +85,13 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
   }
 
   function updateStep(index: number, updated: CampaignStep) {
-    setSteps((prev) => prev.map((step, idx) => (idx === index ? { ...updated, order: idx } : step)));
+    setSteps((prev) =>
+      prev.map((step, idx) => (idx === index ? normalizeStep(updated, idx) : normalizeStep(step, idx)))
+    );
   }
 
   function deleteStep(index: number) {
-    setSteps((prev) =>
-      prev.filter((_, idx) => idx !== index).map((step, idx) => ({ ...step, order: idx }))
-    );
+    setSteps((prev) => prev.filter((_, idx) => idx !== index).map((step, idx) => normalizeStep(step, idx)));
   }
 
   return (
@@ -129,10 +140,10 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
           />
         </label>
         <label className="text-xs text-slate-600">
-          Folder IDs (comma-separated)
+          Lead Folder ID
           <input
-            value={folderIdsRaw}
-            onChange={(event) => setFolderIdsRaw(event.target.value)}
+            value={folderId}
+            onChange={(event) => setFolderId(event.target.value)}
             className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900"
           />
         </label>
@@ -142,7 +153,7 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
         {steps.map((step, index) => (
           <CampaignStepEditor
             key={step.id}
-            step={step}
+            step={normalizeStep(step, index)}
             onChange={(updated) => updateStep(index, updated)}
             onDelete={steps.length > 1 ? () => deleteStep(index) : undefined}
           />

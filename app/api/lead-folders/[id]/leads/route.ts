@@ -3,11 +3,24 @@ import { createServiceClient } from '@/lib/supabase/server';
 import {
   assignLeadsToFolder,
   clearLeadsFromFolder,
+  getLeadsByFolder,
   refreshFolderLeadCount,
 } from '@/lib/supabase/queries/lead-folders.queries';
 
 interface RouteContext {
   params: { id: string };
+}
+
+export async function GET(_: Request, { params }: RouteContext) {
+  try {
+    const leads = await getLeadsByFolder(createServiceClient(), params.id);
+    return NextResponse.json({ leads });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed loading folder leads' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request, { params }: RouteContext) {

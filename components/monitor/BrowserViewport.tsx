@@ -45,11 +45,15 @@ export function BrowserViewport() {
 
       <div className="relative flex-1 bg-[#1a1a1a]">
         {showBrowser ? (
-          <iframe
-            src={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:6080/vnc.html?autoconnect=true&resize=scale`}
-            className="h-full w-full border-none"
-            title="Browser Feed"
-          />
+          <div className="flex h-full items-center justify-center p-8 text-center">
+            <div>
+              <Monitor className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+              <p className="text-sm font-medium text-slate-300">VNC stream removed from this build.</p>
+              <p className="mt-2 text-xs text-slate-400">
+                Browser sessions still run via Playwright/AdsPower, but remote VNC preview is disabled.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">

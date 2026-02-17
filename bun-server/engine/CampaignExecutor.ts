@@ -1,23 +1,338 @@
+import { randomUUID } from 'node:crypto';
+import { supabase } from '../lib/supabase';
+import { Logger } from '../lib/logger';
+import { AdsPowerManager } from './AdsPowerManager';
 import { PlaywrightManager } from './PlaywrightManager';
-import { visitProfile } from './actions/visitProfile';
+import { checkConnection } from './actions/checkConnection';
+import { followProfile } from './actions/followProfile';
+import { ensureLoggedIn } from './actions/linkedinLogin';
 import { sendConnection } from './actions/sendConnection';
 import { sendMessage } from './actions/sendMessage';
-import { followProfile } from './actions/followProfile';
-import { checkConnection } from './actions/checkConnection';
-import { logger } from '../logger';
-import { supabase } from '../lib/supabase';
-import type { ActionResult, Campaign, CampaignStep, Lead } from '../../types';
+import { syncInbox } from './actions/syncInbox';
+import { visitProfile } from './actions/visitProfile';
+import { dismissPopups, detectLoggedOut } from './helpers/linkedinGuard';
+import { betweenLeadsPause, actionPause, randomBetween } from './helpers/humanBehavior';
+import { interpolate } from './helpers/templateEngine';
+import type { CampaignStep, Lead } from '../../types';
 
-interface CampaignLeadProgressRow {
-  id: string;
+// Active execution abort map keyed by profileId.
+const abortMap = new Map<string, boolean>();
+
+export function requestAbort(profileId: string) {
+  abortMap.set(profileId, true);
+}
+
+export function clearAbort(profileId: string) {
+  abortMap.delete(profileId);
+}
+
+function isAborted(profileId: string): boolean {
+  return abortMap.get(profileId) === true;
+}
+
+interface ProgressWithLead {
   campaign_id: string;
   lead_id: string;
   profile_id: string;
   current_step: number;
-  status: 'pending' | 'in_progress' | 'waiting' | 'completed' | 'failed' | 'skipped';
+  status: string;
   next_action_at: string | null;
-  last_action_at: string | null;
-  step_results: Array<{ step: number; result: string; at: string }>;
+  leads: Lead | null;
+}
+
+export async function runCampaignForProfile(
+  campaignId: string,
+  profileId: string,
+  adspowerProfileId: string,
+  runId: string
+): Promise<void> {
+  const logger = new Logger(runId);
+  clearAbort(profileId);
+
+  const { data: steps } = await supabase
+    .from('campaign_steps')
+    .select('*')
+    .eq('campaign_id', campaignId)
+    .order('step_order', { ascending: true });
+
+  if (!steps || steps.length === 0) {
+    await logger.log('campaign', 'campaign', 'error', 'No steps defined');
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const { data: dueLeads } = await supabase
+    .from('campaign_lead_progress')
+    .select('campaign_id, lead_id, profile_id, current_step, status, next_action_at, leads(*)')
+    .eq('campaign_id', campaignId)
+    .eq('profile_id', profileId)
+    .in('status', ['pending', 'waiting', 'active'])
+    .or(`next_action_at.is.null,next_action_at.lte.${now}`)
+    .limit(25);
+
+  if (!dueLeads || dueLeads.length === 0) {
+    await logger.log('campaign', 'campaign', 'success', 'No leads due for action');
+    return;
+  }
+
+  let wsEndpoint = '';
+  try {
+    const started = await AdsPowerManager.startProfile(adspowerProfileId);
+    wsEndpoint = started.wsEndpoint;
+  } catch (error) {
+    await logger.log(
+      'browser',
+      'campaign',
+      'error',
+      `AdsPower failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return;
+  }
+
+  let page: import('playwright').Page | null = null;
+
+  try {
+    page = await PlaywrightManager.connectAndGetPage(wsEndpoint);
+
+    const loginOutcome = await ensureLoggedIn(page, profileId, adspowerProfileId);
+    if (!['already_logged_in', 'logged_in'].includes(loginOutcome)) {
+      await logger.log(
+        'session',
+        'campaign',
+        'error',
+        `LinkedIn login failed: ${loginOutcome}`
+      );
+      await supabase
+        .from('linkedin_profiles')
+        .update({ login_status: loginOutcome === '2fa_required' ? '2fa_pending' : 'error' })
+        .eq('id', profileId);
+      return;
+    }
+
+    try {
+      await syncInbox(page, profileId);
+    } catch (syncError) {
+      await logger.log(
+        'unibox',
+        'campaign',
+        'error',
+        `Inbox sync skipped: ${syncError instanceof Error ? syncError.message : String(syncError)}`
+      );
+    }
+
+    await supabase
+      .from('linkedin_profiles')
+      .update({ status: 'running' })
+      .eq('id', profileId);
+
+    for (const row of dueLeads as unknown as ProgressWithLead[]) {
+      if (isAborted(profileId)) {
+        await logger.log('campaign', 'campaign', 'skipped', 'Execution aborted by user');
+        break;
+      }
+
+      const lead = row.leads as Lead | null;
+      if (!lead) continue;
+
+      if (await detectLoggedOut(page)) {
+        await logger.log('session', 'campaign', 'error', 'Session expired - stopping', lead.id);
+        await supabase
+          .from('linkedin_profiles')
+          .update({ login_status: 'logged_out' })
+          .eq('id', profileId);
+        break;
+      }
+
+      await logger.log(
+        `lead-${lead.id}`,
+        'campaign',
+        'running',
+        `Processing: ${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+        lead.id
+      );
+
+      await executeStepsForLead(
+        page,
+        lead,
+        steps as CampaignStep[],
+        row.current_step,
+        campaignId,
+        profileId,
+        runId
+      );
+
+      await betweenLeadsPause(10, 35);
+    }
+  } catch (error) {
+    await logger.log(
+      'campaign',
+      'campaign',
+      'error',
+      `Fatal: ${error instanceof Error ? error.message : String(error)}`
+    );
+  } finally {
+    if (page) {
+      await PlaywrightManager.disconnect(page).catch(() => undefined);
+    }
+
+    await AdsPowerManager.stopProfile(adspowerProfileId).catch(() => undefined);
+    await supabase
+      .from('linkedin_profiles')
+      .update({ status: 'idle' })
+      .eq('id', profileId);
+  }
+}
+
+async function executeStepsForLead(
+  page: import('playwright').Page,
+  lead: Lead,
+  steps: CampaignStep[],
+  startStep: number,
+  campaignId: string,
+  profileId: string,
+  runId: string
+) {
+  const logger = new Logger(runId);
+  let currentStepIdx = startStep;
+
+  while (currentStepIdx < steps.length) {
+    const step = steps.find((entry) => entry.step_order === currentStepIdx);
+    if (!step) {
+      break;
+    }
+
+    await dismissPopups(page);
+
+    let result: any = { success: false };
+
+    try {
+      switch (step.step_type) {
+        case 'visit_profile':
+          result = await visitProfile(page, lead.linkedin_url);
+          break;
+
+        case 'follow_profile':
+          result = await followProfile(page);
+          break;
+
+        case 'send_connection': {
+          const rawNote = String(step.config.note || '');
+          const note = rawNote ? interpolate(rawNote, lead) : undefined;
+          result = await sendConnection(page, note);
+          break;
+        }
+
+        case 'send_message': {
+          const rawMessage = String(step.config.message || '');
+          const message = interpolate(rawMessage, lead);
+          result = await sendMessage(page, message);
+          break;
+        }
+
+        case 'check_connection': {
+          result = await checkConnection(page);
+          if (!result.isConnected && step.config.notConnectedGoToStep !== undefined) {
+            currentStepIdx = Number(step.config.notConnectedGoToStep);
+            continue;
+          }
+          break;
+        }
+
+        case 'wait_days': {
+          const days = Number(step.config.days || 3);
+          const minHours = Number(step.config.minHours || days * 24 - 4);
+          const maxHours = Number(step.config.maxHours || days * 24 + 4);
+          const waitMs = randomBetween(minHours * 3600 * 1000, maxHours * 3600 * 1000);
+          const nextAt = new Date(Date.now() + waitMs).toISOString();
+
+          await supabase
+            .from('campaign_lead_progress')
+            .update({
+              current_step: currentStepIdx + 1,
+              status: 'waiting',
+              next_action_at: nextAt,
+              last_action_at: new Date().toISOString(),
+            })
+            .eq('campaign_id', campaignId)
+            .eq('lead_id', lead.id);
+
+          await logger.log(
+            step.id,
+            step.step_type,
+            'success',
+            `Waiting ${days} days - next action: ${nextAt}`,
+            lead.id
+          );
+
+          return;
+        }
+
+        default:
+          result = { success: true, action: 'noop' };
+      }
+    } catch (error) {
+      result = {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    if (result.error === 'SESSION_EXPIRED' || result.error === 'RATE_LIMITED') {
+      await logger.log(step.id, step.step_type, 'error', result.error, lead.id);
+      await supabase
+        .from('campaign_lead_progress')
+        .update({
+          status: 'failed',
+          last_action_at: new Date().toISOString(),
+        })
+        .eq('campaign_id', campaignId)
+        .eq('lead_id', lead.id);
+
+      return;
+    }
+
+    await logger.log(
+      step.id,
+      step.step_type,
+      result.success ? 'success' : 'error',
+      result.action || result.error || 'done',
+      lead.id
+    );
+
+    if (!result.success) {
+      await supabase
+        .from('campaign_lead_progress')
+        .update({
+          status: 'failed',
+          last_action_at: new Date().toISOString(),
+        })
+        .eq('campaign_id', campaignId)
+        .eq('lead_id', lead.id);
+
+      return;
+    }
+
+    currentStepIdx += 1;
+    await actionPause();
+  }
+
+  await supabase
+    .from('campaign_lead_progress')
+    .update({
+      current_step: steps.length,
+      status: 'completed',
+      last_action_at: new Date().toISOString(),
+      next_action_at: null,
+    })
+    .eq('campaign_id', campaignId)
+    .eq('lead_id', lead.id);
+}
+
+interface CampaignSchedulerRow {
+  id: string;
+  folder_id: string | null;
+  status: 'draft' | 'active' | 'paused' | 'completed' | 'archived';
+  daily_new_leads: number;
 }
 
 interface StartOptions {
@@ -31,11 +346,9 @@ interface ExecutorStatus {
   lastTickAt: string | null;
 }
 
-const DEFAULT_TICK_MS = Number(process.env.CAMPAIGN_TICK_MS || 12000);
-const DEFAULT_BATCH_SIZE = Number(process.env.CAMPAIGN_BATCH_SIZE || 10);
+const DEFAULT_TICK_MS = Number(process.env.CAMPAIGN_TICK_MS || 60000);
 
 export class CampaignExecutor {
-  private manager = new PlaywrightManager();
   private interval: NodeJS.Timeout | null = null;
   private running = false;
   private ticking = false;
@@ -47,53 +360,39 @@ export class CampaignExecutor {
       return { started: false, reason: 'already_running', status: this.getStatus() };
     }
 
+    this.running = true;
     this.activeCampaignId = options.campaignId ?? null;
 
-    if (options.campaignId) {
-      await this.initializeCampaignProgress(options.campaignId);
+    if (this.activeCampaignId) {
       await supabase
         .from('campaigns')
         .update({ status: 'active', updated_at: new Date().toISOString() })
-        .eq('id', options.campaignId);
+        .eq('id', this.activeCampaignId);
     }
 
-    this.running = true;
     this.interval = setInterval(() => {
       void this.tick();
     }, DEFAULT_TICK_MS);
 
     await this.tick();
 
-    logger.info('CampaignExecutor started', {
-      campaignId: this.activeCampaignId,
-      tickMs: DEFAULT_TICK_MS,
-      batchSize: DEFAULT_BATCH_SIZE,
-    });
-
     return { started: true, status: this.getStatus() };
   }
 
   async stop(options: StartOptions = {}) {
-    if (options.campaignId) {
-      await supabase
-        .from('campaigns')
-        .update({ status: 'paused', updated_at: new Date().toISOString() })
-        .eq('id', options.campaignId);
-    }
-
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
 
     this.running = false;
-    this.activeCampaignId = options.campaignId ?? this.activeCampaignId;
 
-    await this.manager.cleanup().catch(() => undefined);
-
-    logger.info('CampaignExecutor stopped', {
-      campaignId: options.campaignId ?? this.activeCampaignId,
-    });
+    if (options.campaignId) {
+      await supabase
+        .from('campaigns')
+        .update({ status: 'paused', updated_at: new Date().toISOString() })
+        .eq('id', options.campaignId);
+    }
 
     return { stopped: true, status: this.getStatus() };
   }
@@ -116,293 +415,114 @@ export class CampaignExecutor {
     this.lastTickAt = new Date().toISOString();
 
     try {
-      const rows = await this.loadDueProgressRows();
-      for (const row of rows) {
-        await this.processProgressRow(row);
+      let query = supabase
+        .from('campaigns')
+        .select('id, folder_id, status, daily_new_leads')
+        .eq('status', 'active')
+        .order('updated_at', { ascending: true });
+
+      if (this.activeCampaignId) {
+        query = query.eq('id', this.activeCampaignId);
+      }
+
+      const { data: campaigns } = await query;
+
+      for (const campaign of (campaigns ?? []) as CampaignSchedulerRow[]) {
+        if (!this.running) break;
+
+        await this.seedCampaignProgress(campaign);
+
+        const { data: attachedProfiles } = await supabase
+          .from('campaign_profiles')
+          .select('profile_id, is_active, linkedin_profiles(adspower_profile_id)')
+          .eq('campaign_id', campaign.id)
+          .eq('is_active', true);
+
+        for (const mapping of attachedProfiles ?? []) {
+          if (!this.running) break;
+
+          const profileId = String((mapping as any).profile_id || '');
+          const adspowerProfileId = String((mapping as any).linkedin_profiles?.adspower_profile_id || '');
+
+          if (!profileId || !adspowerProfileId) {
+            continue;
+          }
+
+          const runId = randomUUID();
+          await runCampaignForProfile(campaign.id, profileId, adspowerProfileId, runId);
+        }
       }
     } catch (error) {
-      logger.error('CampaignExecutor tick failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const logger = new Logger();
+      await logger.log(
+        'campaign_scheduler',
+        'campaign',
+        'error',
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       this.ticking = false;
     }
   }
 
-  private async loadDueProgressRows(): Promise<CampaignLeadProgressRow[]> {
-    let query = supabase
-      .from('campaign_lead_progress')
-      .select('*')
-      .in('status', ['pending', 'waiting', 'in_progress'])
-      .order('updated_at', { ascending: true })
-      .limit(DEFAULT_BATCH_SIZE);
-
-    if (this.activeCampaignId) {
-      query = query.eq('campaign_id', this.activeCampaignId);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw new Error(`Failed loading campaign progress: ${error.message}`);
-    }
-
-    const now = Date.now();
-    return ((data ?? []) as CampaignLeadProgressRow[]).filter((row) => {
-      if (row.status !== 'waiting') return true;
-      if (!row.next_action_at) return true;
-      return new Date(row.next_action_at).getTime() <= now;
-    });
-  }
-
-  private async processProgressRow(row: CampaignLeadProgressRow) {
-    const [campaign, lead, profile] = await Promise.all([
-      this.getCampaign(row.campaign_id),
-      this.getLead(row.lead_id),
-      this.getProfile(row.profile_id),
-    ]);
-
-    if (!campaign || !lead || !profile) {
-      await this.markRowFailed(row, 'Campaign context missing');
+  private async seedCampaignProgress(campaign: CampaignSchedulerRow): Promise<void> {
+    if (!campaign.folder_id) {
       return;
     }
 
-    const sequence = this.normalizeSequence(campaign.sequence);
-    const step = sequence[row.current_step];
+    const { data: profileRows } = await supabase
+      .from('campaign_profiles')
+      .select('profile_id')
+      .eq('campaign_id', campaign.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
 
-    if (!step) {
-      await this.finishRow(row, 'completed', `Sequence complete at step ${row.current_step}`);
+    const profileIds = (profileRows ?? []).map((entry) => String((entry as any).profile_id || '')).filter(Boolean);
+    if (!profileIds.length) {
       return;
     }
 
-    await supabase
+    const { data: existingRows } = await supabase
       .from('campaign_lead_progress')
-      .update({
-        status: 'in_progress',
-        last_action_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', row.id);
+      .select('lead_id')
+      .eq('campaign_id', campaign.id);
 
-    try {
-      const result = await this.executeStep(step, lead, profile.adspower_profile_id ?? null);
-      const nextResults = [
-        ...(Array.isArray(row.step_results) ? row.step_results : []),
-        {
-          step: row.current_step,
-          result: result.action || (result.success ? 'ok' : 'error'),
-          at: new Date().toISOString(),
-        },
-      ];
+    const existingLeadIds = new Set((existingRows ?? []).map((entry) => String((entry as any).lead_id || '')));
 
-      if (!result.success) {
-        await supabase
-          .from('campaign_lead_progress')
-          .update({
-            status: 'failed',
-            step_results: nextResults,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', row.id);
-        return;
-      }
+    const { data: folderLeads } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('folder_id', campaign.folder_id)
+      .order('created_at', { ascending: true })
+      .limit(5000);
 
-      if (step.type === 'wait_days') {
-        const waitDays = Number(step.config.days || step.config.afterDays || 1);
-        const nextActionAt = new Date(Date.now() + Math.max(1, waitDays) * 24 * 60 * 60 * 1000).toISOString();
+    const candidates = (folderLeads ?? [])
+      .map((entry) => String((entry as any).id || ''))
+      .filter((leadId) => Boolean(leadId) && !existingLeadIds.has(leadId));
 
-        await supabase
-          .from('campaign_lead_progress')
-          .update({
-            current_step: row.current_step + 1,
-            status: 'waiting',
-            next_action_at: nextActionAt,
-            step_results: nextResults,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', row.id);
-
-        return;
-      }
-
-      const nextStep = row.current_step + 1;
-      const done = nextStep >= sequence.length;
-      await supabase
-        .from('campaign_lead_progress')
-        .update({
-          current_step: nextStep,
-          status: done ? 'completed' : 'pending',
-          next_action_at: null,
-          step_results: nextResults,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', row.id);
-    } catch (error) {
-      await this.markRowFailed(row, error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  private async executeStep(step: CampaignStep, lead: Lead, adspowerProfileId: string | null): Promise<ActionResult> {
-    if (step.type === 'wait_days') {
-      return { success: true, action: 'wait_days' };
-    }
-
-    const page = await this.manager.getPage({ adspowerProfileId });
-
-    if (step.type !== 'visit_profile' && lead.linkedin_url && !page.url().includes('/in/')) {
-      await visitProfile(page, { useCurrentLead: true, dwellSeconds: { min: 2, max: 4 } }, lead);
-    }
-
-    switch (step.type) {
-      case 'visit_profile':
-        return visitProfile(page, { ...step.config, useCurrentLead: true }, lead);
-      case 'send_connection':
-        return sendConnection(page, step.config, lead);
-      case 'send_message':
-        return sendMessage(page, step.config, lead);
-      case 'follow_profile':
-        return followProfile(page, step.config, lead);
-      case 'check_connected': {
-        const res = await checkConnection(page, lead);
-        return { ...res, action: res.action === 'yes' ? 'connected' : 'not_connected' };
-      }
-      case 'withdraw_connection':
-        return { success: true, action: 'withdraw_not_implemented' };
-      default:
-        return { success: true, action: 'noop' };
-    }
-  }
-
-  private normalizeSequence(raw: unknown): CampaignStep[] {
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((entry, index) => {
-        const row = (entry ?? {}) as Record<string, unknown>;
-        return {
-          id: String(row.id || `step_${index + 1}`),
-          type: String(row.type || 'visit_profile') as CampaignStep['type'],
-          order: Number(row.order ?? index),
-          config: (row.config ?? {}) as CampaignStep['config'],
-          label: row.label ? String(row.label) : undefined,
-        } satisfies CampaignStep;
-      })
-      .sort((a, b) => a.order - b.order);
-  }
-
-  private async markRowFailed(row: CampaignLeadProgressRow, message: string) {
-    logger.warn('Campaign step failed', {
-      rowId: row.id,
-      campaignId: row.campaign_id,
-      leadId: row.lead_id,
-      message,
-    });
-    await supabase
-      .from('campaign_lead_progress')
-      .update({
-        status: 'failed',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', row.id);
-  }
-
-  private async finishRow(row: CampaignLeadProgressRow, status: 'completed' | 'skipped', message: string) {
-    logger.info('Campaign row finished', {
-      rowId: row.id,
-      campaignId: row.campaign_id,
-      leadId: row.lead_id,
-      status,
-      message,
-    });
-    await supabase
-      .from('campaign_lead_progress')
-      .update({
-        status,
-        next_action_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', row.id);
-  }
-
-  private async getCampaign(campaignId: string): Promise<Campaign | null> {
-    const { data, error } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
-    if (error) return null;
-    return data as Campaign;
-  }
-
-  private async getLead(leadId: string): Promise<Lead | null> {
-    const { data, error } = await supabase.from('leads').select('*').eq('id', leadId).single();
-    if (error) return null;
-    return data as Lead;
-  }
-
-  private async getProfile(profileId: string): Promise<{ id: string; adspower_profile_id: string | null } | null> {
-    const { data, error } = await supabase
-      .from('linkedin_profiles')
-      .select('id, adspower_profile_id')
-      .eq('id', profileId)
-      .single();
-    if (error) return null;
-    return data as { id: string; adspower_profile_id: string | null };
-  }
-
-  private async initializeCampaignProgress(campaignId: string) {
-    const [{ data: profiles }, { data: folders }] = await Promise.all([
-      supabase
-        .from('campaign_profiles')
-        .select('profile_id')
-        .eq('campaign_id', campaignId)
-        .eq('status', 'active')
-        .limit(1),
-      supabase.from('campaign_lead_folders').select('folder_id').eq('campaign_id', campaignId),
-    ]);
-
-    const selectedProfileId = profiles?.[0]?.profile_id as string | undefined;
-    if (!selectedProfileId) {
-      logger.warn('Campaign start skipped seed: no active profile mapping', { campaignId });
+    if (!candidates.length) {
       return;
     }
 
-    const folderIds = (folders ?? []).map((row) => String((row as Record<string, unknown>).folder_id));
-
-    let leadsQuery = supabase.from('leads').select('id');
-    if (folderIds.length > 0) {
-      leadsQuery = leadsQuery.in('folder_id', folderIds);
-    }
-
-    const { data: leads, error: leadsError } = await leadsQuery.limit(2000);
-    if (leadsError) {
-      throw new Error(`Failed loading campaign leads: ${leadsError.message}`);
-    }
-
-    const upserts = (leads ?? []).map((entry) => {
-      const row = entry as Record<string, unknown>;
-      return {
-        campaign_id: campaignId,
-        lead_id: String(row.id),
-        profile_id: selectedProfileId,
+    const rows: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const profileId = profileIds[i % profileIds.length];
+      rows.push({
+        campaign_id: campaign.id,
+        lead_id: candidates[i],
+        profile_id: profileId,
         current_step: 0,
         status: 'pending',
-        next_action_at: null,
-        last_action_at: null,
-        step_results: [],
-      };
-    });
-
-    if (!upserts.length) {
-      logger.info('Campaign start seed completed with no eligible leads', { campaignId });
-      return;
+      });
     }
 
-    const { error } = await supabase
+    await supabase
       .from('campaign_lead_progress')
-      .upsert(upserts, { onConflict: 'campaign_id,lead_id', ignoreDuplicates: true });
-    if (error) {
-      throw new Error(`Failed upserting campaign progress seed: ${error.message}`);
-    }
+      .upsert(rows, { onConflict: 'campaign_id,lead_id', ignoreDuplicates: true });
 
-    logger.info('Campaign progress seeded', {
-      campaignId,
-      leads: upserts.length,
-      profileId: selectedProfileId,
-    });
+    await supabase
+      .from('campaigns')
+      .update({ total_leads: existingLeadIds.size + rows.length, updated_at: new Date().toISOString() })
+      .eq('id', campaign.id);
   }
 }

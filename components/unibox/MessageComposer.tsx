@@ -43,7 +43,7 @@ export function MessageComposer({ disabled = false, onSend }: MessageComposerPro
         onClick={handleSend}
         className="mt-2 rounded-md border border-cyan-400/40 px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
       >
-        {isSending ? 'Sending...' : 'Send (local)'}
+        {isSending ? 'Sending...' : 'Send'}
       </button>
     </div>
   );

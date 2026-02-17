@@ -8,6 +8,8 @@ export interface Lead {
   last_name: string | null;
   company: string | null;
   title: string | null;
+  folder_id?: string | null;
+  notes?: string | null;
   extra_data: Record<string, string>;
   status: LeadStatus;
   created_at: string;
@@ -21,5 +23,7 @@ export interface CreateLeadInput {
   last_name?: string;
   company?: string;
   title?: string;
+  folder_id?: string | null;
+  notes?: string;
   extra_data?: Record<string, string>;
 }

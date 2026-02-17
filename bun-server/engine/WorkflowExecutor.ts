@@ -5,7 +5,9 @@ import { followProfile } from './actions/followProfile';
 import { sendMessage } from './actions/sendMessage';
 import { sendConnection } from './actions/sendConnection';
 import { checkConnection } from './actions/checkConnection';
+import { ensureLoggedIn } from './actions/linkedinLogin';
 import { waitDelay } from './actions/waitDelay';
+import { syncInbox } from './actions/syncInbox';
 import { getSupabaseClient } from '../supabase';
 import { RateLimiter } from './helpers/rateLimiter';
 import { logger } from '../logger';
@@ -173,6 +175,15 @@ export class WorkflowExecutor {
       const page = await this.launchPageWithTimeout(120000, {
         adspowerProfileId: profileContext.adspowerProfileId,
       });
+
+      if (profileContext.adspowerProfileId) {
+        const loginOutcome = await ensureLoggedIn(page, profileContext.id, profileContext.adspowerProfileId);
+        if (!['already_logged_in', 'logged_in'].includes(loginOutcome)) {
+          throw new Error(`LinkedIn login failed before workflow execution (${loginOutcome})`);
+        }
+
+        await syncInbox(page, profileContext.id).catch(() => undefined);
+      }
 
       for (const lead of leads) {
         if (this.shouldStop) break;
@@ -367,13 +378,13 @@ export class WorkflowExecutor {
 
     if (condition === 'connection_status') {
       const statusResult = await checkConnection(page, lead);
-      const actualStatus = String(statusResult.data?.status || '').toLowerCase();
-      const conditionMet = expected ? actualStatus === expected : statusResult.action === 'yes';
+      const actualStatus = statusResult.isConnected ? 'connected' : 'not_connected';
+      const conditionMet = expected ? actualStatus === expected : statusResult.isConnected;
 
       return {
         success: true,
         action: conditionMet ? 'yes' : 'no',
-        data: { condition, expected: expected || 'connected/following/pending', actual: actualStatus },
+        data: { condition, expected: expected || 'connected', actual: actualStatus },
       };
     }
 
@@ -465,6 +476,15 @@ export class WorkflowExecutor {
       const page = await this.launchPageWithTimeout(90000, {
         adspowerProfileId: profileContext?.adspowerProfileId,
       });
+
+      if (profileContext?.adspowerProfileId) {
+        const loginOutcome = await ensureLoggedIn(page, profileContext.id, profileContext.adspowerProfileId);
+        if (!['already_logged_in', 'logged_in'].includes(loginOutcome)) {
+          throw new Error(`LinkedIn login failed before test run (${loginOutcome})`);
+        }
+
+        await syncInbox(page, profileContext.id).catch(() => undefined);
+      }
       const fakeLead: Lead = {
         id: 'test',
         profile_id: linkedinProfileId || 'test',

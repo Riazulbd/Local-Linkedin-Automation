@@ -1,98 +1,111 @@
 import type { Page } from 'playwright';
-import type { ActionResult, CampaignStep, Lead } from '../../../types';
-import { LI, findFirst } from '../helpers/selectors';
-import { humanClick, humanType, actionDelay } from '../helpers/humanBehavior';
-import { withPopupGuard } from '../helpers/popupGuard';
+import { actionPause, humanClick, humanType, microPause, thinkingPause } from '../helpers/humanBehavior';
+import { detectRateLimit, dismissPopups, findVisibleButton } from '../helpers/linkedinGuard';
 import { interpolate } from '../helpers/templateEngine';
-import { Logger } from '../../lib/logger';
+import type { ActionResult, Lead } from '../../../types';
 
-type SendConnectionData = Partial<CampaignStep['config']> & {
+const CONNECT_SELECTORS = [
+  'button:has-text("Connect")',
+  '[aria-label*="Connect"]',
+  'button[data-control-name="connect"]',
+];
+
+const PENDING_SELECTORS = ['button:has-text("Pending")', '[aria-label*="Pending"]'];
+
+type SendConnectionConfig = {
+  note?: string;
   connectionNote?: string;
-  runId?: string;
 };
 
-const actionLogger = new Logger(process.env.ACTION_LOG_RUN_ID ?? 'runtime_send_connection');
-
-async function openConnectFlow(page: Page) {
-  let connectBtn = await findFirst(page, LI.connectBtn, 2500);
-  if (connectBtn) return connectBtn;
-
-  const moreActionsBtn = await findFirst(page, LI.moreActionsBtn, 1500);
-  if (!moreActionsBtn) return null;
-
-  await humanClick(page, moreActionsBtn);
-  await actionDelay();
-
-  connectBtn = await findFirst(page, LI.connectInMoreMenu, 2000);
-  return connectBtn;
+function resolveConnectionNote(input: SendConnectionConfig | string | undefined, lead?: Lead): string | undefined {
+  if (!input) return undefined;
+  const raw = typeof input === 'string' ? input : input.note || input.connectionNote || '';
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  return lead ? interpolate(trimmed, lead) : trimmed;
 }
 
-export async function sendConnection(page: Page, data: SendConnectionData, lead: Lead): Promise<ActionResult> {
-  await actionLogger.log('send_connection', 'send_connection', 'running', 'Preparing connection request', lead.id);
+export async function sendConnection(page: Page, note?: string): Promise<ActionResult>;
+export async function sendConnection(page: Page, input?: SendConnectionConfig, lead?: Lead): Promise<ActionResult>;
+export async function sendConnection(
+  page: Page,
+  input?: SendConnectionConfig | string,
+  lead?: Lead
+): Promise<ActionResult> {
+  await dismissPopups(page);
 
-  return withPopupGuard(page, async () => {
-    const alreadyConnected = await findFirst(page, LI.messageBtn, 1000);
-    if (alreadyConnected) {
-      await actionLogger.log('send_connection', 'send_connection', 'success', 'Already connected', lead.id);
-      return { success: true, action: 'already_connected' };
+  if (await detectRateLimit(page)) {
+    return { success: false, error: 'RATE_LIMITED' };
+  }
+
+  const pending = await findVisibleButton(page, PENDING_SELECTORS, 1000);
+  if (pending) {
+    return { success: true, action: 'already_pending' };
+  }
+
+  let connectBtn = await findVisibleButton(page, CONNECT_SELECTORS, 2000);
+
+  if (!connectBtn) {
+    const moreBtn = await findVisibleButton(
+      page,
+      ['button:has-text("More")', '[aria-label*="More actions"]'],
+      1500
+    );
+
+    if (moreBtn) {
+      await humanClick(page, moreBtn.locator);
+      await microPause();
+      await dismissPopups(page);
+      connectBtn = await findVisibleButton(page, CONNECT_SELECTORS, 2000);
     }
+  }
 
-    const pending = await findFirst(page, LI.pendingBtn, 1000);
-    if (pending) {
-      await actionLogger.log('send_connection', 'send_connection', 'success', 'Connection already pending', lead.id);
-      return { success: true, action: 'already_pending' };
-    }
+  if (!connectBtn) {
+    return { success: false, error: 'CONNECT_BUTTON_NOT_FOUND' };
+  }
 
-    const connectBtn = await openConnectFlow(page);
-    if (!connectBtn) {
-      await actionLogger.log('send_connection', 'send_connection', 'error', 'Connect button not found', lead.id);
-      return { success: false, error: 'Connect button not found' };
-    }
+  await humanClick(page, connectBtn.locator);
+  await actionPause();
+  await dismissPopups(page);
 
-    await humanClick(page, connectBtn);
-    await actionDelay();
+  const note = resolveConnectionNote(input, lead);
 
-    const rawNote = String(data.connectionNote || '').trim();
-    const note = rawNote ? interpolate(rawNote, lead).trim().slice(0, 300) : '';
+  if (note) {
+    const addNoteBtn = await findVisibleButton(
+      page,
+      ['button:has-text("Add a note")', '[aria-label="Add a note"]'],
+      2000
+    );
 
-    if (note) {
-      const addNoteBtn = await findFirst(page, LI.addNoteBtn, 2500);
-      if (addNoteBtn) {
-        await humanClick(page, addNoteBtn);
-        await actionDelay();
+    if (addNoteBtn) {
+      await humanClick(page, addNoteBtn.locator);
+      await thinkingPause();
+      await dismissPopups(page);
 
-        const noteBox = await findFirst(page, LI.connectionNoteTextarea, 3000);
-        if (!noteBox) {
-          await actionLogger.log(
-            'send_connection',
-            'send_connection',
-            'error',
-            'Connection note textarea not found',
-            lead.id
-          );
-          return { success: false, error: 'Connection note textarea not found' };
-        }
-
-        await humanType(page, noteBox, note);
+      const noteBox = page.locator('textarea[name="message"]').first();
+      if (await noteBox.isVisible({ timeout: 2000 })) {
+        await humanType(page, noteBox, note.slice(0, 300));
       }
     }
+  }
 
-    const sendInviteBtn =
-      (await findFirst(page, LI.sendInviteBtn, 2500)) ||
-      (await findFirst(page, LI.sendWithoutNoteBtn, 2000));
-    if (!sendInviteBtn) {
-      await actionLogger.log('send_connection', 'send_connection', 'error', 'Send invitation button not found', lead.id);
-      return { success: false, error: 'Send invitation button not found' };
-    }
+  const sendBtn = await findVisibleButton(
+    page,
+    [
+      'button:has-text("Send")',
+      'button:has-text("Send without a note")',
+      '[aria-label*="Send now"]',
+    ],
+    3000
+  );
 
-    await humanClick(page, sendInviteBtn);
-    await actionDelay();
+  if (!sendBtn) {
+    return { success: false, error: 'SEND_BUTTON_NOT_FOUND' };
+  }
 
-    await actionLogger.log('send_connection', 'send_connection', 'success', 'Connection request sent', lead.id);
-    return {
-      success: true,
-      action: 'connection_sent',
-      data: { noteLength: note.length },
-    };
-  });
+  await humanClick(page, sendBtn.locator);
+  await actionPause();
+  await dismissPopups(page);
+
+  return { success: true, action: 'connection_sent' };
 }

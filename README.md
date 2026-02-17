@@ -42,7 +42,6 @@ docker compose up --build
 Services:
 - Frontend: `http://localhost:3000`
 - Bun server: `http://localhost:3001/health`
-- Live browser (noVNC): `http://localhost:6080/vnc.html`
 
 Optional env for Dockerized Bun server:
 - `ADSPOWER_BASE_URL` (default: `http://host.docker.internal:50325`)

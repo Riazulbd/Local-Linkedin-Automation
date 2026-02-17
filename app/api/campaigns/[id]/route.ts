@@ -9,7 +9,7 @@ import {
   updateCampaign,
 } from '@/lib/supabase/queries/campaigns.queries';
 import { normalizeCampaignSequence, validateCampaignSequence } from '@/lib/logic/campaign.logic';
-import type { CampaignStatus } from '@/types';
+import type { CampaignStatus, CreateCampaignInput } from '@/types';
 
 interface RouteContext {
   params: { id: string };
@@ -26,23 +26,8 @@ export async function GET(_: Request, { params }: RouteContext) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
     }
 
-    const [profileLinksRes, folderLinksRes, progress] = await Promise.all([
-      supabase.from('campaign_profiles').select('profile_id').eq('campaign_id', params.id),
-      supabase.from('campaign_lead_folders').select('folder_id').eq('campaign_id', params.id),
-      getCampaignProgress(supabase, params.id),
-    ]);
-
-    if (profileLinksRes.error) throw new Error(profileLinksRes.error.message);
-    if (folderLinksRes.error) throw new Error(folderLinksRes.error.message);
-
-    return NextResponse.json({
-      campaign: {
-        ...campaign,
-        profile_ids: (profileLinksRes.data ?? []).map((row) => String((row as Record<string, unknown>).profile_id)),
-        folder_ids: (folderLinksRes.data ?? []).map((row) => String((row as Record<string, unknown>).folder_id)),
-      },
-      progress,
-    });
+    const progress = await getCampaignProgress(supabase, params.id);
+    return NextResponse.json({ campaign, progress });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to load campaign' },
@@ -53,27 +38,38 @@ export async function GET(_: Request, { params }: RouteContext) {
 
 export async function PATCH(req: Request, { params }: RouteContext) {
   try {
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = (await req.json().catch(() => ({}))) as Partial<CreateCampaignInput> & {
+      sequence?: unknown;
+    };
     const supabase = createServiceClient();
 
-    const patch: Record<string, unknown> = {};
+    const patch: Parameters<typeof updateCampaign>[2] = {};
     if (typeof body.name === 'string') patch.name = body.name;
     if (typeof body.description === 'string' || body.description === null) patch.description = body.description;
     if (typeof body.daily_new_leads === 'number' && Number.isFinite(body.daily_new_leads)) {
       patch.daily_new_leads = body.daily_new_leads;
     }
-    if (typeof body.status === 'string') patch.status = body.status as CampaignStatus;
+    if (typeof body.respect_working_hrs === 'boolean') {
+      patch.respect_working_hrs = body.respect_working_hrs;
+    }
+    if (typeof body.status === 'string') {
+      patch.status = body.status as CampaignStatus;
+    }
+    if (body.folder_id !== undefined) {
+      patch.folder_id = body.folder_id;
+    }
 
-    if (body.sequence !== undefined) {
-      const normalized = normalizeCampaignSequence(body.sequence);
+    const rawSteps = body.steps ?? body.sequence;
+    if (rawSteps !== undefined) {
+      const normalized = normalizeCampaignSequence(rawSteps);
       const validation = validateCampaignSequence(normalized);
       if (!validation.valid) {
         return NextResponse.json({ error: validation.reason }, { status: 400 });
       }
-      patch.sequence = normalized;
+      patch.steps = normalized;
     }
 
-    const campaign = await updateCampaign(supabase, params.id, patch);
+    await updateCampaign(supabase, params.id, patch);
 
     if (Array.isArray(body.profile_ids)) {
       const profileIds = body.profile_ids.filter((id): id is string => typeof id === 'string');
@@ -83,8 +79,11 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     if (Array.isArray(body.folder_ids)) {
       const folderIds = body.folder_ids.filter((id): id is string => typeof id === 'string');
       await setCampaignFolders(supabase, params.id, folderIds);
+    } else if (body.folder_id !== undefined) {
+      await setCampaignFolders(supabase, params.id, body.folder_id ? [body.folder_id] : []);
     }
 
+    const campaign = await getCampaignById(supabase, params.id);
     return NextResponse.json({ campaign });
   } catch (error) {
     return NextResponse.json(

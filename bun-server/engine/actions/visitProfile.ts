@@ -1,50 +1,58 @@
 import type { Page } from 'playwright';
-import type { ActionResult, CampaignStep, Lead } from '../../../types';
-import { LI, findFirst } from '../helpers/selectors';
-import { navigationDelay, simulateProfileReading } from '../helpers/humanBehavior';
-import { withPopupGuard } from '../helpers/popupGuard';
-import { Logger } from '../../lib/logger';
+import { actionPause, glanceAtPage, humanScrollDown, randomBetween } from '../helpers/humanBehavior';
+import { detectLoggedOut, detectRateLimit, dismissPopups, safeWaitForSettle } from '../helpers/linkedinGuard';
+import type { ActionResult, Lead } from '../../../types';
 
-type VisitProfileData = Partial<CampaignStep['config']> & {
+type VisitProfileData = {
   useCurrentLead?: boolean;
   url?: string;
-  runId?: string;
 };
 
-const actionLogger = new Logger(process.env.ACTION_LOG_RUN_ID ?? 'runtime_visit_profile');
+export async function visitProfile(page: Page, linkedinUrl: string): Promise<ActionResult>;
+export async function visitProfile(page: Page, data: VisitProfileData, lead: Lead): Promise<ActionResult>;
+export async function visitProfile(
+  page: Page,
+  input: string | VisitProfileData,
+  lead?: Lead
+): Promise<ActionResult> {
+  try {
+    const rawUrl =
+      typeof input === 'string'
+        ? input
+        : input.useCurrentLead
+          ? lead?.linkedin_url || input.url || ''
+          : input.url || lead?.linkedin_url || '';
 
-export async function visitProfile(page: Page, data: VisitProfileData, lead: Lead): Promise<ActionResult> {
-  const targetUrl = (data.useCurrentLead ? lead.linkedin_url : data.url) || lead.linkedin_url;
-  if (!targetUrl) {
-    return { success: false, error: 'No LinkedIn URL provided' };
-  }
+    if (!rawUrl) {
+      return { success: false, error: 'MISSING_PROFILE_URL' };
+    }
 
-  await actionLogger.log('visit_profile', 'visit_profile', 'running', `Navigating to profile: ${targetUrl}`, lead.id);
+    const url = rawUrl.endsWith('/') ? rawUrl : `${rawUrl}/`;
 
-  return withPopupGuard(page, async () => {
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await navigationDelay();
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await safeWaitForSettle(page);
+    await dismissPopups(page);
 
-    const profileName = await findFirst(page, LI.profileName, 4000);
-    const foundName = profileName ? (await profileName.textContent())?.trim() || null : null;
+    if (await detectLoggedOut(page)) {
+      return { success: false, error: 'SESSION_EXPIRED' };
+    }
 
-    await simulateProfileReading(page, data.dwellSeconds ?? { min: 8, max: 22 });
+    if (await detectRateLimit(page)) {
+      return { success: false, error: 'RATE_LIMITED' };
+    }
 
-    await actionLogger.log(
-      'visit_profile',
-      'visit_profile',
-      'success',
-      `Visited profile${foundName ? `: ${foundName}` : ''}`,
-      lead.id
-    );
+    await glanceAtPage(page);
+    await humanScrollDown(page, randomBetween(400, 900));
+    await actionPause();
+    await dismissPopups(page);
+    await humanScrollDown(page, randomBetween(200, 500));
+    await dismissPopups(page);
 
+    return { success: true, action: 'visited', data: { url } };
+  } catch (error) {
     return {
-      success: true,
-      action: 'visited',
-      data: {
-        url: targetUrl,
-        profileName: foundName,
-      },
+      success: false,
+      error: error instanceof Error ? error.message : 'VISIT_PROFILE_FAILED',
     };
-  });
+  }
 }

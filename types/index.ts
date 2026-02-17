@@ -6,3 +6,4 @@ export * from './api.types';
 export * from './campaign.types';
 export * from './lead-folder.types';
 export * from './unibox.types';
+export * from './login.types';

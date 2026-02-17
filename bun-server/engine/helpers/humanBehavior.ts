@@ -1,156 +1,244 @@
-import type { Page, Locator } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
-// ─────────────────────────────────────────────────────────────────
-// CORE UTILITIES
-// ─────────────────────────────────────────────────────────────────
-
-function rand(min: number, max: number): number {
-  return Math.random() * (max - min) + min;
+interface Point {
+  x: number;
+  y: number;
 }
 
-function randInt(min: number, max: number): number {
-  return Math.floor(rand(min, max + 1));
+// ---------------------------------------------------------------------
+// Timing utilities
+// ---------------------------------------------------------------------
+export function randomBetween(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
+export async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function gaussian(mean: number, stdDev: number): number {
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return mean + stdDev * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+export async function microPause(): Promise<void> {
+  await sleep(randomBetween(180, 600));
 }
 
-// ─────────────────────────────────────────────────────────────────
-// BEZIER MOUSE MOVEMENT
-// ─────────────────────────────────────────────────────────────────
-
-interface Point { x: number; y: number }
-
-function bezierPoint(t: number, points: Point[]): Point {
-  if (points.length === 1) return points[0];
-  const newPoints: Point[] = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    newPoints.push({
-      x: (1 - t) * points[i].x + t * points[i + 1].x,
-      y: (1 - t) * points[i].y + t * points[i + 1].y,
-    });
-  }
-  return bezierPoint(t, newPoints);
+export async function actionPause(): Promise<void> {
+  await sleep(randomBetween(1200, 4500));
 }
 
-function generateControlPoints(from: Point, to: Point): Point[] {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
+export async function thinkingPause(): Promise<void> {
+  await sleep(randomBetween(800, 2800));
+}
 
-  const perp = { x: -dy / (dist || 1), y: dx / (dist || 1) };
-  const curve1 = rand(-dist * 0.3, dist * 0.3);
-  const curve2 = rand(-dist * 0.2, dist * 0.2);
+export async function betweenLeadsPause(minSec: number, maxSec: number): Promise<void> {
+  await sleep(randomBetween(minSec * 1000, maxSec * 1000));
+}
 
+// ---------------------------------------------------------------------
+// Bezier mouse movement
+// ---------------------------------------------------------------------
+function bezierPoint(t: number, p0: Point, p1: Point, p2: Point, p3: Point): Point {
+  const mt = 1 - t;
+  return {
+    x: Math.round(mt ** 3 * p0.x + 3 * mt ** 2 * t * p1.x + 3 * mt * t ** 2 * p2.x + t ** 3 * p3.x),
+    y: Math.round(mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y),
+  };
+}
+
+function generateControlPoints(start: Point, end: Point): [Point, Point] {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const cx1 = start.x + (dx * randomBetween(20, 40)) / 100 + randomBetween(-50, 50);
+  const cy1 = start.y + (dy * randomBetween(20, 40)) / 100 + randomBetween(-50, 50);
+  const cx2 = end.x - (dx * randomBetween(20, 40)) / 100 + randomBetween(-50, 50);
+  const cy2 = end.y - (dy * randomBetween(20, 40)) / 100 + randomBetween(-50, 50);
   return [
-    from,
-    {
-      x: from.x + dx * 0.3 + perp.x * curve1 + rand(-8, 8),
-      y: from.y + dy * 0.3 + perp.y * curve1 + rand(-8, 8),
-    },
-    {
-      x: from.x + dx * 0.7 + perp.x * curve2 + rand(-6, 6),
-      y: from.y + dy * 0.7 + perp.y * curve2 + rand(-6, 6),
-    },
-    to,
+    { x: cx1, y: cy1 },
+    { x: cx2, y: cy2 },
   ];
 }
 
-export async function moveMouse(page: Page, to: Point, currentPos?: Point): Promise<void> {
-  const from = currentPos ?? { x: randInt(400, 900), y: randInt(300, 600) };
-  const controlPoints = generateControlPoints(from, to);
+export async function humanMouseMove(page: Page, target: Point): Promise<void> {
+  const current = await page
+    .evaluate(() => ({
+      x: (window as any)._lastMouseX ?? Math.round(window.innerWidth / 2),
+      y: (window as any)._lastMouseY ?? Math.round(window.innerHeight / 2),
+    }))
+    .catch(() => ({ x: 400, y: 400 }));
 
-  const dist = Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2);
-  const steps = Math.max(20, Math.floor(dist / 8));
-  const baseDuration = Math.max(300, dist * 1.8);
+  const [cp1, cp2] = generateControlPoints(current, target);
+  const steps = randomBetween(20, 40);
 
-  for (let i = 1; i <= steps; i++) {
+  for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
-
-    const tEased = t < 0.5
-      ? 2 * t * t + rand(-0.01, 0.01)
-      : -1 + (4 - 2 * t) * t + rand(-0.01, 0.01);
-
-    const point = bezierPoint(Math.min(1, Math.max(0, tEased)), controlPoints);
-    await page.mouse.move(point.x + rand(-0.5, 0.5), point.y + rand(-0.5, 0.5));
-
-    const speedMultiplier = Math.sin(t * Math.PI);
-    const stepDelay = (baseDuration / steps) * (1.5 - speedMultiplier);
-    await sleep(Math.max(5, stepDelay));
-
-    if (Math.random() < 0.03) await sleep(rand(50, 180));
+    const easedT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    const point = bezierPoint(easedT, current, cp1, cp2, target);
+    await page.mouse.move(point.x, point.y);
+    const speedFactor = Math.sin(Math.PI * t);
+    await sleep(Math.round(randomBetween(4, 18) / (speedFactor + 0.1)));
   }
+
+  await page
+    .evaluate((p) => {
+      (window as any)._lastMouseX = p.x;
+      (window as any)._lastMouseY = p.y;
+    }, target)
+    .catch(() => undefined);
 }
 
-// ─────────────────────────────────────────────────────────────────
-// HUMAN CLICK
-// ─────────────────────────────────────────────────────────────────
-
+// ---------------------------------------------------------------------
+// Human click
+// ---------------------------------------------------------------------
 export async function humanClick(page: Page, locator: Locator): Promise<void> {
+  await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+  await microPause();
+
   const box = await locator.boundingBox();
-  if (!box) throw new Error('Element has no bounding box');
-
-  const target: Point = {
-    x: box.x + box.width  * rand(0.35, 0.65) + rand(-2, 2),
-    y: box.y + box.height * rand(0.35, 0.65) + rand(-2, 2),
-  };
-
-  await moveMouse(page, target);
-  await sleep(rand(80, 220));
-
-  if (Math.random() < 0.25) {
-    await page.mouse.move(target.x + rand(-3, 3), target.y + rand(-3, 3));
-    await sleep(rand(30, 80));
+  if (!box) {
+    await locator.click({ delay: randomBetween(60, 140) });
+    return;
   }
 
-  await page.mouse.down();
-  await sleep(rand(60, 160));
-  await page.mouse.up();
-  await sleep(rand(100, 300));
+  const targetX = Math.round(box.x + (box.width * randomBetween(25, 75)) / 100);
+  const targetY = Math.round(box.y + (box.height * randomBetween(25, 75)) / 100);
+
+  await humanMouseMove(page, { x: targetX, y: targetY });
+  await microPause();
+
+  if (Math.random() < 0.4) {
+    await sleep(randomBetween(200, 800));
+  }
+
+  await page.mouse.click(targetX, targetY, {
+    delay: randomBetween(60, 160),
+  });
+
+  await microPause();
 }
 
-// ─────────────────────────────────────────────────────────────────
-// HUMAN TYPING
-// ─────────────────────────────────────────────────────────────────
-
+// ---------------------------------------------------------------------
+// Human typing
+// ---------------------------------------------------------------------
 export async function humanType(page: Page, locator: Locator, text: string): Promise<void> {
   await humanClick(page, locator);
-  await sleep(rand(200, 500));
+  await thinkingPause();
 
-  await page.keyboard.press('Control+a');
-  await sleep(rand(80, 150));
-
-  let lastChar = '';
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; i += 1) {
     const char = text[i];
+    const isLetter = /[a-zA-Z]/.test(char);
 
-    let delay = gaussian(55, 18);
+    if (isLetter && Math.random() < 0.03 && i < text.length - 1) {
+      const wrongChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() < 0.5 ? 1 : -1));
+      await page.keyboard.type(wrongChar);
+      await sleep(randomBetween(80, 300));
+      await page.keyboard.press('Backspace');
+      await sleep(randomBetween(150, 400));
+    }
 
-    if ('.!?,;:'.includes(lastChar)) delay += rand(150, 400);
-    else if (' ' === lastChar && Math.random() < 0.15) delay += rand(100, 250);
-
-    if (Math.random() < 0.08) delay *= 0.4;
-    if (Math.random() < 0.015) delay += rand(800, 2500);
-
-    await sleep(Math.max(20, delay));
     await page.keyboard.type(char);
-    lastChar = char;
-  }
 
-  await sleep(rand(200, 600));
+    let delay = randomBetween(40, 130);
+    if (['.', '!', '?', ','].includes(char)) delay += randomBetween(100, 400);
+    if (['.', '!', '?'].includes(char)) delay += randomBetween(200, 600);
+    if (Math.random() < 0.15) delay = randomBetween(20, 50);
+
+    await sleep(delay);
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// HUMAN SCROLL
-// ─────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------
+// Human scrolling
+// ---------------------------------------------------------------------
+export async function humanScrollDown(page: Page, totalPx?: number): Promise<void> {
+  const amount = totalPx ?? randomBetween(300, 900);
+  const steps = randomBetween(4, 9);
+  const perStep = Math.floor(amount / steps);
+
+  for (let i = 0; i < steps; i += 1) {
+    const stepAmount = perStep + randomBetween(-40, 40);
+    await page.mouse.wheel(0, stepAmount);
+    await sleep(randomBetween(80, 280));
+
+    if (Math.random() < 0.15 && i > 0) {
+      await page.mouse.wheel(0, -randomBetween(30, 100));
+      await sleep(randomBetween(200, 500));
+    }
+  }
+
+  await microPause();
+}
+
+export async function humanScrollToTop(page: Page): Promise<void> {
+  await page.keyboard.press('Home');
+  await sleep(randomBetween(300, 700));
+}
+
+export async function humanScrollIntoView(page: Page, locator: Locator): Promise<boolean> {
+  try {
+    await locator.scrollIntoViewIfNeeded({ timeout: 3000 });
+    await sleep(randomBetween(200, 600));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Idle behavior / engagement
+// ---------------------------------------------------------------------
+export async function idleMovement(page: Page, durationMs: number): Promise<void> {
+  const endAt = Date.now() + durationMs;
+  while (Date.now() < endAt) {
+    const viewport = (await page.viewportSize()) ?? { width: 1280, height: 800 };
+    const x = randomBetween(100, Math.max(101, viewport.width - 100));
+    const y = randomBetween(100, Math.max(101, viewport.height - 100));
+    await humanMouseMove(page, { x, y }).catch(() => undefined);
+
+    if (Math.random() < 0.3) {
+      await humanScrollDown(page, randomBetween(50, 200)).catch(() => undefined);
+    }
+
+    await sleep(randomBetween(800, 3000));
+  }
+}
+
+export async function glanceAtPage(page: Page): Promise<void> {
+  const viewport = (await page.viewportSize()) ?? { width: 1280, height: 800 };
+  const numGlances = randomBetween(1, 3);
+
+  for (let i = 0; i < numGlances; i += 1) {
+    const x = randomBetween(200, Math.max(201, viewport.width - 200));
+    const y = randomBetween(100, Math.max(101, viewport.height - 200));
+    await humanMouseMove(page, { x, y });
+    await sleep(randomBetween(400, 1200));
+  }
+
+  if (Math.random() < 0.5) {
+    await humanScrollDown(page, randomBetween(100, 400));
+    await sleep(randomBetween(500, 1500));
+  }
+}
+
+// ---------------------------------------------------------------------
+// Compatibility exports for existing workflow code paths
+// ---------------------------------------------------------------------
+export async function moveMouse(page: Page, to: Point): Promise<void> {
+  await humanMouseMove(page, to);
+}
+
+export async function microDelay(): Promise<void> {
+  await microPause();
+}
+
+export async function actionDelay(): Promise<void> {
+  await actionPause();
+}
+
+export async function navigationDelay(): Promise<void> {
+  await sleep(randomBetween(1400, 3200));
+}
+
+export async function betweenLeadsDelay(min = 15, max = 45): Promise<void> {
+  await betweenLeadsPause(min, max);
+}
 
 export async function humanScroll(
   page: Page,
@@ -160,94 +248,29 @@ export async function humanScroll(
     readingMode?: boolean;
   } = {}
 ): Promise<void> {
-  const { direction = 'down', readingMode = false } = config;
-  const totalDistance = config.distance ?? randInt(300, 900);
+  const distance = config.distance ?? randomBetween(200, 700);
+  if (config.direction === 'up') {
+    await page.mouse.wheel(0, -Math.abs(distance));
+    await microPause();
+    return;
+  }
 
-  let scrolled = 0;
-  while (scrolled < totalDistance) {
-    const chunk = randInt(60, 180);
-    const actualChunk = Math.min(chunk, totalDistance - scrolled);
-    const delta = direction === 'down' ? actualChunk : -actualChunk;
-
-    const mx = randInt(300, 900);
-    const my = randInt(200, 600);
-    await page.mouse.move(mx + rand(-10, 10), my + rand(-10, 10));
-    await page.mouse.wheel(0, delta);
-    scrolled += actualChunk;
-
-    if (readingMode) {
-      const readPause = gaussian(1800, 600);
-      await sleep(Math.max(400, readPause));
-    } else {
-      await sleep(rand(80, 250));
-    }
-
-    if (readingMode && Math.random() < 0.2) {
-      await page.mouse.wheel(0, -randInt(40, 120));
-      await sleep(rand(300, 700));
-    }
-
-    if (Math.random() < 0.3) await sleep(rand(500, 2000));
+  await humanScrollDown(page, distance);
+  if (config.readingMode) {
+    await sleep(randomBetween(500, 1400));
   }
 }
-
-// ─────────────────────────────────────────────────────────────────
-// PROFILE PAGE READING SIMULATION
-// ─────────────────────────────────────────────────────────────────
 
 export async function simulateProfileReading(
   page: Page,
   dwellSeconds: { min: number; max: number } = { min: 8, max: 22 }
 ): Promise<void> {
-  const totalMs = randInt(dwellSeconds.min * 1000, dwellSeconds.max * 1000);
-  const startTime = Date.now();
+  const totalMs = randomBetween(dwellSeconds.min * 1000, dwellSeconds.max * 1000);
+  const start = Date.now();
 
-  await sleep(rand(500, 1200));
-  await humanScroll(page, { distance: randInt(200, 400), readingMode: false });
-  await sleep(rand(800, 1500));
+  await glanceAtPage(page);
 
-  await humanScroll(page, { distance: randInt(300, 600), readingMode: true });
-
-  if (Math.random() < 0.4) {
-    await humanScroll(page, { distance: randInt(150, 350), direction: 'up' });
-    await sleep(rand(600, 1500));
+  while (Date.now() - start < totalMs) {
+    await idleMovement(page, randomBetween(900, 1800));
   }
-
-  await humanScroll(page, { distance: randInt(200, 500), readingMode: true });
-
-  while (Date.now() - startTime < totalMs) {
-    await idleMouseMovement(page);
-    await sleep(rand(1000, 3000));
-  }
-}
-
-async function idleMouseMovement(page: Page): Promise<void> {
-  const cx = randInt(300, 900);
-  const cy = randInt(200, 600);
-  await page.mouse.move(cx + rand(-15, 15), cy + rand(-15, 15));
-  await sleep(rand(200, 600));
-}
-
-// ─────────────────────────────────────────────────────────────────
-// DELAYS
-// ─────────────────────────────────────────────────────────────────
-
-export async function microDelay(): Promise<void> {
-  await sleep(gaussian(400, 150));
-}
-
-export async function actionDelay(): Promise<void> {
-  await sleep(gaussian(4500, 1800));
-}
-
-export async function navigationDelay(): Promise<void> {
-  await sleep(gaussian(2500, 800));
-}
-
-export async function betweenLeadsDelay(min = 15, max = 45): Promise<void> {
-  await sleep(randInt(min * 1000, max * 1000));
-}
-
-export async function thinkingPause(): Promise<void> {
-  await sleep(rand(1200, 4000));
 }

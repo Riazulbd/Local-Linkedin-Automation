@@ -20,6 +20,12 @@ export function CampaignCard({
   onStop,
   onDelete,
 }: CampaignCardProps) {
+  const steps = campaign.steps ?? campaign.sequence ?? [];
+  const profiles = campaign.profiles ?? campaign.profile_ids ?? [];
+  const progress = campaign.total_leads > 0
+    ? Math.min(100, Math.round((campaign.contacted_leads / campaign.total_leads) * 100))
+    : 0;
+
   return (
     <article
       className={`rounded-xl border p-4 transition ${
@@ -37,8 +43,17 @@ export function CampaignCard({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-        <span>Steps: {Array.isArray(campaign.sequence) ? campaign.sequence.length : 0}</span>
+        <span>Profiles: {profiles.length}</span>
+        <span>Steps: {steps.length}</span>
+        <span>Leads: {campaign.total_leads}</span>
         <span>Daily cap: {campaign.daily_new_leads}</span>
+      </div>
+
+      <div className="mt-3">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full rounded-full bg-cyan-400/80" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="mt-1 text-[10px] text-slate-500">{progress}% contacted</p>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">

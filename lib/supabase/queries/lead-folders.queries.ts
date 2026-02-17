@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CreateFolderInput, LeadFolder } from '@/types';
+import type { CreateFolderInput, Lead, LeadFolder } from '@/types';
 
 export async function getLeadFolders(supabase: SupabaseClient): Promise<LeadFolder[]> {
   const { data, error } = await supabase
@@ -113,4 +113,18 @@ export async function refreshFolderLeadCount(supabase: SupabaseClient, folderId:
     .update({ lead_count: count ?? 0, updated_at: new Date().toISOString() })
     .eq('id', folderId);
   if (error) throw new Error(error.message);
+}
+
+export async function getLeadsByFolder(
+  supabase: SupabaseClient,
+  folderId: string
+): Promise<Lead[]> {
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('folder_id', folderId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Lead[];
 }

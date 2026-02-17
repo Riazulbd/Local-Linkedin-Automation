@@ -28,6 +28,8 @@ interface AdsPowerStopResponse {
   msg?: string;
 }
 
+const staticPageBrowserMap = new WeakMap<Page, Browser>();
+
 export interface PlaywrightLaunchOptions {
   adspowerProfileId?: string | null;
 }
@@ -393,5 +395,26 @@ export class PlaywrightManager {
         url: page.url(),
       });
     }
+  }
+
+  static async connectAndGetPage(wsEndpoint: string): Promise<Page> {
+    const browser = await chromium.connectOverCDP(wsEndpoint, {
+      timeout: Number(process.env.ADSPOWER_CONNECT_TIMEOUT_MS || 12000),
+    });
+
+    const context = browser.contexts()[0] ?? (await browser.newContext({ viewport: null }));
+    const page =
+      context.pages().find((entry) => !entry.isClosed()) ??
+      (await context.newPage());
+
+    staticPageBrowserMap.set(page, browser);
+    await page.bringToFront().catch(() => undefined);
+    return page;
+  }
+
+  static async disconnect(page: Page): Promise<void> {
+    const browser = staticPageBrowserMap.get(page);
+    staticPageBrowserMap.delete(page);
+    await browser?.close().catch(() => undefined);
   }
 }

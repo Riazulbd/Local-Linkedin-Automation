@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { bulkInsertLeads } from '@/lib/supabase/queries/leads.queries';
+import { refreshFolderLeadCount } from '@/lib/supabase/queries/folders.queries';
+import type { CreateLeadInput } from '@/types';
 
 interface UploadLead {
   linkedin_url: string;
@@ -23,6 +26,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const leads = Array.isArray(body.leads) ? (body.leads as UploadLead[]) : [];
     const profileId = typeof body.profileId === 'string' ? body.profileId : null;
+    const folderId = typeof body.folderId === 'string' ? body.folderId : null;
 
     if (!leads.length) {
       return NextResponse.json({ error: 'No leads provided' }, { status: 400 });
@@ -32,36 +36,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'profileId is required' }, { status: 400 });
     }
 
-    const valid = leads
-      .map((lead) => {
-        const row: Record<string, unknown> = {
-          linkedin_url: typeof lead.linkedin_url === 'string' ? lead.linkedin_url.trim() : '',
+    const inserts = leads
+      .map((lead): CreateLeadInput | null => {
+        const linkedinUrl = typeof lead.linkedin_url === 'string' ? lead.linkedin_url.trim() : '';
+        if (!linkedinUrl) return null;
+
+        return {
+          profile_id: profileId,
+          linkedin_url: linkedinUrl,
           first_name: lead.first_name?.trim() || '',
           last_name: lead.last_name?.trim() || '',
           company: lead.company?.trim() || '',
           title: lead.title?.trim() || '',
           extra_data: lead.extra_data || {},
-          status: 'pending' as const,
-          profile_id: profileId,
+          folder_id: folderId,
         };
-        return row;
       })
-      .filter((lead) => Boolean(lead.linkedin_url));
+      .filter((lead): lead is CreateLeadInput => lead !== null);
 
-    if (!valid.length) {
+    if (!inserts.length) {
       return NextResponse.json({ error: 'No valid leads found in payload' }, { status: 400 });
     }
 
     const supabase = createServiceClient();
-
-    for (const group of chunk(valid, 500)) {
-      const { error } = await supabase.from('leads').insert(group);
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
+    let inserted = 0;
+    for (const group of chunk(inserts, 500)) {
+      const rows = await bulkInsertLeads(supabase, group);
+      inserted += rows.length;
     }
 
-    return NextResponse.json({ inserted: valid.length });
+    if (folderId) {
+      await refreshFolderLeadCount(supabase, folderId);
+    }
+
+    return NextResponse.json({ inserted });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to upload leads' },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSVLeadRow, ColumnMapping } from '@/types';
 
 const FIELD_OPTIONS: Array<ColumnMapping['field']> = [
@@ -23,9 +23,13 @@ export function CSVImportMapper({ rows, onChange }: CSVImportMapperProps) {
     return Object.keys(rows[0]);
   }, [rows]);
 
-  const [mapping, setMapping] = useState<ColumnMapping[]>(() =>
-    headers.map((header) => ({ csv_header: header, field: guessField(header) }))
-  );
+  const [mapping, setMapping] = useState<ColumnMapping[]>([]);
+
+  useEffect(() => {
+    const inferred = headers.map((header) => ({ csv_header: header, field: guessField(header) }));
+    setMapping(inferred);
+    onChange(inferred);
+  }, [headers, onChange]);
 
   function updateField(csvHeader: string, field: ColumnMapping['field']) {
     const next = mapping.map((row) => (row.csv_header === csvHeader ? { ...row, field } : row));

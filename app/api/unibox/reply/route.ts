@@ -8,25 +8,25 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json().catch(() => ({}))) as {
+      threadId?: string;
       profileId?: string;
-      email?: string;
-      password?: string;
+      message?: string;
     };
 
-    if (!body.profileId) {
-      return NextResponse.json({ error: 'profileId is required' }, { status: 400 });
+    if (!body.threadId || !body.message) {
+      return NextResponse.json({ error: 'threadId and message are required' }, { status: 400 });
     }
 
-    const response = await fetch(`${BUN_SERVER_URL}/auth/login`, {
+    const response = await fetch(`${BUN_SERVER_URL}/unibox/reply`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-server-secret': BUN_SERVER_SECRET,
       },
       body: JSON.stringify({
+        threadId: body.threadId,
         profileId: body.profileId,
-        email: body.email,
-        password: body.password,
+        message: body.message,
       }),
     });
 
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     return NextResponse.json(payload);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to start LinkedIn login' },
+      { error: error instanceof Error ? error.message : 'Failed to send reply' },
       { status: 500 }
     );
   }

@@ -5,6 +5,8 @@ import { useProfileStore } from '@/store/profileStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { CampaignProvider } from '@/lib/context/CampaignContext';
 import { UniboxProvider } from '@/lib/context/UniboxContext';
+import { TwoFAProvider } from '@/lib/context/TwoFAContext';
+import { GlobalTwoFAAlert } from '@/components/auth/GlobalTwoFAAlert';
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const initializeProfiles = useProfileStore((state) => state.initialize);
@@ -16,8 +18,13 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, [initializeProfiles, initializeSettings]);
 
   return (
-    <CampaignProvider>
-      <UniboxProvider>{children}</UniboxProvider>
-    </CampaignProvider>
+    <TwoFAProvider>
+      <CampaignProvider>
+        <UniboxProvider>
+          <GlobalTwoFAAlert />
+          {children}
+        </UniboxProvider>
+      </CampaignProvider>
+    </TwoFAProvider>
   );
 }

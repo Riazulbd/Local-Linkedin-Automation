@@ -1,64 +1,63 @@
 import type { Page } from 'playwright';
-import type { ActionResult, CampaignStep, Lead } from '../../../types';
-import { LI, findFirst } from '../helpers/selectors';
-import { actionDelay, humanClick } from '../helpers/humanBehavior';
-import { withPopupGuard } from '../helpers/popupGuard';
-import { Logger } from '../../lib/logger';
+import { actionPause, glanceAtPage, humanClick, microPause } from '../helpers/humanBehavior';
+import { detectRateLimit, dismissPopups, findVisibleButton } from '../helpers/linkedinGuard';
+import type { ActionResult } from '../../../types';
 
-type FollowProfileData = Partial<CampaignStep['config']> & {
-  fallbackToConnect?: boolean;
-  runId?: string;
-};
+const FOLLOW_SELECTORS = [
+  'button:has-text("Follow")',
+  '[aria-label*="Follow"]',
+  'button[data-control-name="follow"]',
+];
 
-const actionLogger = new Logger(process.env.ACTION_LOG_RUN_ID ?? 'runtime_follow_profile');
+const FOLLOWING_SELECTORS = [
+  'button:has-text("Following")',
+  '[aria-label*="Following"]',
+];
 
-export async function followProfile(page: Page, data: FollowProfileData, lead: Lead): Promise<ActionResult> {
-  await actionLogger.log('follow_profile', 'follow_profile', 'running', 'Checking follow state', lead.id);
+export async function followProfile(
+  page: Page,
+  _data?: Record<string, unknown>,
+  _lead?: { id?: string }
+): Promise<ActionResult> {
+  await dismissPopups(page);
+  if (await detectRateLimit(page)) {
+    return { success: false, error: 'RATE_LIMITED' };
+  }
 
-  return withPopupGuard(page, async () => {
-    const alreadyFollowing = await findFirst(page, LI.followingBtn, 1200);
-    if (alreadyFollowing) {
-      await actionLogger.log('follow_profile', 'follow_profile', 'success', 'Already following', lead.id);
-      return { success: true, action: 'already_following' };
+  const alreadyFollowing = await findVisibleButton(page, FOLLOWING_SELECTORS, 1000);
+  if (alreadyFollowing) {
+    return { success: true, action: 'already_following' };
+  }
+
+  let followBtn = await findVisibleButton(page, FOLLOW_SELECTORS, 2000);
+
+  if (!followBtn) {
+    const moreBtn = await findVisibleButton(
+      page,
+      ['button:has-text("More")', '[aria-label*="More actions"]'],
+      1500
+    );
+
+    if (moreBtn) {
+      await humanClick(page, moreBtn.locator);
+      await microPause();
+      await dismissPopups(page);
+      followBtn = await findVisibleButton(page, FOLLOW_SELECTORS, 2000);
     }
+  }
 
-    const followBtn = await findFirst(page, LI.followBtn, 2500);
-    if (followBtn) {
-      await humanClick(page, followBtn);
-      await actionDelay();
+  if (!followBtn) {
+    return { success: false, error: 'FOLLOW_BUTTON_NOT_FOUND' };
+  }
 
-      const confirmed = await findFirst(page, LI.followingBtn, 3000);
-      await actionLogger.log(
-        'follow_profile',
-        'follow_profile',
-        'success',
-        confirmed ? 'Followed profile' : 'Follow clicked, awaiting state refresh',
-        lead.id
-      );
-      return {
-        success: true,
-        action: confirmed ? 'followed' : 'follow_clicked_unverified',
-      };
-    }
+  await glanceAtPage(page);
+  await humanClick(page, followBtn.locator);
+  await actionPause();
+  await dismissPopups(page);
 
-    if (data.fallbackToConnect !== false) {
-      const connectBtn = await findFirst(page, LI.connectBtn, 1800);
-      if (connectBtn) {
-        await humanClick(page, connectBtn);
-        await actionDelay();
-
-        const sendWithoutNote = await findFirst(page, LI.sendWithoutNoteBtn, 2200);
-        if (sendWithoutNote) {
-          await humanClick(page, sendWithoutNote);
-          await actionDelay();
-        }
-
-        await actionLogger.log('follow_profile', 'follow_profile', 'success', 'Follow unavailable, sent connection', lead.id);
-        return { success: true, action: 'connection_sent' };
-      }
-    }
-
-    await actionLogger.log('follow_profile', 'follow_profile', 'error', 'No follow or connect button found', lead.id);
-    return { success: false, error: 'No follow or connect button found' };
-  });
+  const nowFollowing = await findVisibleButton(page, FOLLOWING_SELECTORS, 2000);
+  return {
+    success: Boolean(nowFollowing),
+    action: nowFollowing ? 'followed' : 'click_failed',
+  };
 }
