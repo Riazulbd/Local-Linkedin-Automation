@@ -22,7 +22,7 @@ export function CampaignList({
 }: CampaignListProps) {
   if (!campaigns.length) {
     return (
-      <div className="rounded-xl border border-dashed border-white/20 bg-white/5 p-6 text-sm text-white/60">
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
         No campaigns yet. Create your first campaign to begin.
       </div>
     );

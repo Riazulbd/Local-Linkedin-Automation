@@ -40,15 +40,15 @@ export function LeadFolderAssignDialog({ folder, leads, onAssign }: LeadFolderAs
   }
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/5 p-3">
-      <h3 className="text-sm font-semibold text-white">Assign Leads to Folder</h3>
-      <p className="mt-1 text-xs text-white/60">
-        Target folder: <span className="font-medium text-white">{folder?.name || 'None selected'}</span>
+    <section className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <h3 className="text-sm font-semibold text-slate-900">Assign Leads to Folder</h3>
+      <p className="mt-1 text-xs text-slate-500">
+        Target folder: <span className="font-medium text-slate-900">{folder?.name || 'None selected'}</span>
       </p>
 
-      <div className="mt-2 max-h-56 space-y-1 overflow-auto rounded-md border border-white/10 p-2">
+      <div className="mt-2 max-h-56 space-y-1 overflow-auto rounded-md border border-slate-200 p-2">
         {options.map((lead) => (
-          <label key={lead.id} className="flex items-center gap-2 text-xs text-white/80">
+          <label key={lead.id} className="flex items-center gap-2 text-xs text-slate-700">
             <input
               type="checkbox"
               checked={selected.includes(lead.id)}

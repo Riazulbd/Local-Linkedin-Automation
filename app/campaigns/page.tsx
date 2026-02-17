@@ -20,8 +20,8 @@ export default function CampaignsPage() {
     <main className="mx-auto max-w-6xl space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold text-white">Campaigns</h1>
-          <p className="text-sm text-white/60">Manage multi-step outreach sequences.</p>
+          <h1 className="text-xl font-semibold text-slate-900">Campaigns</h1>
+          <p className="text-sm text-slate-500">Manage multi-step outreach sequences.</p>
         </div>
         <Link
           href="/campaigns/new"
@@ -31,7 +31,7 @@ export default function CampaignsPage() {
         </Link>
       </div>
 
-      {isLoading && <p className="text-sm text-white/60">Loading campaigns...</p>}
+      {isLoading && <p className="text-sm text-slate-500">Loading campaigns...</p>}
       {error && <p className="text-sm text-rose-300">{error}</p>}
 
       <CampaignList

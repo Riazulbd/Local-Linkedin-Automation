@@ -35,18 +35,18 @@ export function CSVImportMapper({ rows, onChange }: CSVImportMapperProps) {
 
   if (!headers.length) {
     return (
-      <div className="rounded-lg border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/60">
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
         No CSV preview rows yet.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-      <h3 className="text-sm font-semibold text-white">CSV Column Mapper</h3>
-      <div className="mt-2 overflow-auto rounded-md border border-white/10">
-        <table className="min-w-full text-left text-xs text-white/70">
-          <thead className="bg-white/5 text-white/50">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <h3 className="text-sm font-semibold text-slate-900">CSV Column Mapper</h3>
+      <div className="mt-2 overflow-auto rounded-md border border-slate-200">
+        <table className="min-w-full text-left text-xs text-slate-600">
+          <thead className="bg-slate-50 text-slate-400">
             <tr>
               <th className="px-3 py-2">CSV Header</th>
               <th className="px-3 py-2">Map To</th>
@@ -54,13 +54,13 @@ export function CSVImportMapper({ rows, onChange }: CSVImportMapperProps) {
           </thead>
           <tbody>
             {headers.map((header) => (
-              <tr key={header} className="border-t border-white/5">
+              <tr key={header} className="border-t border-slate-200">
                 <td className="px-3 py-2 font-mono text-[11px]">{header}</td>
                 <td className="px-3 py-2">
                   <select
                     value={mapping.find((row) => row.csv_header === header)?.field || 'ignore'}
                     onChange={(event) => updateField(header, event.target.value as ColumnMapping['field'])}
-                    className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white"
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900"
                   >
                     {FIELD_OPTIONS.map((option) => (
                       <option key={option} value={option}>

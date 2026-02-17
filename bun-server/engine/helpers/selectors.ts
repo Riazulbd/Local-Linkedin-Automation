@@ -26,14 +26,13 @@ export const LI = {
   messageBtn: [
     'main button[aria-label^="Message "]',
     'button[aria-label^="Message "]',
-    'button[aria-label*="Message"][class*="artdeco-button"]',
+    'button[aria-label^="Message"][class*="artdeco-button"]',
     'button.pvs-profile-actions__action:has-text("Message")',
     'button.pvs-sticky-header-profile-actions__action:has-text("Message")',
+    '.pvs-profile-actions button:has-text("Message")',
+    '.pvs-sticky-header-profile-actions button:has-text("Message")',
     '[data-control-name="message"]',
     '[data-control-name*="message"]',
-    'button:has-text("Message")',
-    '[aria-label^="Message"]',
-    'a:has-text("Message")',
   ],
   messageInMoreMenu: [
     'div[role="menu"] button:has-text("Message")',
@@ -71,23 +70,48 @@ export const LI = {
   messageComposeBox: [
     '.msg-form__contenteditable[contenteditable="true"]',
     '.msg-overlay-conversation-bubble .msg-form__contenteditable[contenteditable="true"]',
+    '.msg-overlay-conversation-bubble .msg-form__contenteditable[role="textbox"]',
+    '.msg-overlay-conversation-bubble [data-lexical-editor="true"][contenteditable="true"]',
+    '.msg-overlay-conversation-bubble .msg-form__message-texteditor [contenteditable="true"]',
     '.msg-form__msg-content-container [contenteditable="true"]',
     '.msg-form__msg-content-container [role="textbox"]',
     '.msg-overlay-bubble-header ~ * [contenteditable="true"][role="textbox"]',
+    '.msg-overlay-bubble-header + div [contenteditable="true"][role="textbox"]',
     '.msg-s-message-list-container [role="textbox"][contenteditable="true"]',
+    '.msg-s-message-list-container .msg-form__contenteditable[contenteditable="true"]',
+    '.msg-form [contenteditable="true"][role="textbox"]',
+    '[data-view-name*="message"] [contenteditable="true"][role="textbox"]',
     '[aria-label*="Write a message"][contenteditable="true"]',
+    '[aria-label*="message"][contenteditable="true"]',
     'div[contenteditable="true"][data-placeholder*="message"]',
+    'textarea[placeholder*="message"]',
     'textarea[name="message"]',
     'div.msg-form__contenteditable[role="textbox"]',
     '[contenteditable="true"][role="textbox"]',
     '[data-artdeco-is-focused] [contenteditable]',
     '.msg-s-message-list-container [contenteditable]',
   ],
+  messageComposeActivator: [
+    '.msg-form__placeholder',
+    '.msg-form__msg-content-container [role="textbox"]',
+    '.msg-overlay-conversation-bubble [aria-label*="Write a message"]',
+    '.msg-overlay-conversation-bubble [aria-label*="message"]',
+    '.msg-form [aria-label*="Write"]',
+    '.msg-form textarea',
+  ],
+  messagingConversationItem: [
+    '.msg-conversation-listitem',
+    '.msg-overlay-list-bubble li[role="listitem"]',
+    '.msg-conversations-container__convo-item-link',
+    '.msg-overlay-list-bubble__conversations-list li',
+  ],
   messageSendBtn: [
     '.msg-form__send-button',
     '.msg-form__send-button:not([disabled])',
     'button.msg-form__send-button[aria-disabled="false"]',
+    '.msg-form button[aria-label*="Send"]',
     '.msg-form__right-actions button[type="submit"]',
+    'button[data-control-name*="send"]',
     'footer button[type="submit"]',
     'button[aria-label^="Send"]',
     'button[aria-label*="Send message"]',
@@ -127,7 +151,7 @@ export async function findFirst(
   selectors: readonly string[],
   timeout = 2000
 ): Promise<import('playwright').Locator | null> {
-  const maxCandidatesPerSelector = 8;
+  const maxCandidatesPerSelector = 40;
 
   for (const sel of selectors) {
     try {

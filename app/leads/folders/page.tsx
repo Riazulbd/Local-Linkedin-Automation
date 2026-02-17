@@ -63,8 +63,8 @@ export default function LeadFoldersPage() {
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">Lead Folders</h1>
-        <p className="text-sm text-white/60">Organize leads into reusable campaign sources.</p>
+        <h1 className="text-xl font-semibold text-slate-900">Lead Folders</h1>
+        <p className="text-sm text-slate-500">Organize leads into reusable campaign sources.</p>
       </div>
 
       {error && <p className="text-sm text-rose-300">{error}</p>}

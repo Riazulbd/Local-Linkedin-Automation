@@ -1,15 +1,17 @@
 import { AppProviders } from '@/components/providers/AppProviders';
+import { AppShell } from '@/components/shell/AppShell';
 import type { Metadata } from 'next';
-import { DM_Sans, JetBrains_Mono } from 'next/font/google';
+import { IBM_Plex_Mono, Space_Grotesk } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
 
-const dmSans = DM_Sans({
+const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
   variable: '--font-sans',
 });
 
-const jetBrainsMono = JetBrains_Mono({
+const ibmPlexMono = IBM_Plex_Mono({
+  weight: ['400', '500', '600'],
   subsets: ['latin'],
   variable: '--font-mono',
 });
@@ -21,10 +23,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${jetBrainsMono.variable}`}>
-      <body className="font-sans text-text-primary antialiased">
+    <html lang="en" className={`${spaceGrotesk.variable} ${ibmPlexMono.variable}`}>
+      <body className="bg-bg-base font-sans text-text-primary antialiased">
         <AppProviders>
-          {children}
+          <AppShell>{children}</AppShell>
         </AppProviders>
       </body>
     </html>

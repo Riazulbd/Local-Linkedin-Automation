@@ -53,7 +53,7 @@ export default function CampaignDetailPage() {
   if (!campaign) {
     return (
       <main className="mx-auto max-w-5xl p-6">
-        <p className="text-sm text-white/60">Campaign not found or still loading.</p>
+        <p className="text-sm text-slate-500">Campaign not found or still loading.</p>
       </main>
     );
   }
@@ -62,8 +62,8 @@ export default function CampaignDetailPage() {
     <main className="mx-auto max-w-6xl space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold text-white">{campaign.name}</h1>
-          <p className="text-sm text-white/60">{campaign.description || 'No description'}</p>
+          <h1 className="text-xl font-semibold text-slate-900">{campaign.name}</h1>
+          <p className="text-sm text-slate-500">{campaign.description || 'No description'}</p>
         </div>
         <div className="flex items-center gap-2">
           <CampaignStatusBadge status={campaign.status} />
@@ -83,7 +83,7 @@ export default function CampaignDetailPage() {
           </button>
           <Link
             href={`/campaigns/${campaign.id}/analytics`}
-            className="rounded-md border border-white/20 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10"
+            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
           >
             Analytics
           </Link>

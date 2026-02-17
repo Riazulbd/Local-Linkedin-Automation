@@ -39,8 +39,8 @@ export default function UniboxPage() {
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">Unibox</h1>
-        <p className="text-sm text-white/60">Unified inbox synced from all LinkedIn profiles.</p>
+        <h1 className="text-xl font-semibold text-slate-900">Unibox</h1>
+        <p className="text-sm text-slate-500">Unified inbox synced from all LinkedIn profiles.</p>
       </div>
 
       {error && <p className="text-sm text-rose-300">{error}</p>}
@@ -61,7 +61,7 @@ export default function UniboxPage() {
 
       <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
         <section className="space-y-2">
-          {isLoading && <p className="text-xs text-white/60">Loading conversations...</p>}
+          {isLoading && <p className="text-xs text-slate-500">Loading conversations...</p>}
           <ConversationList
             conversations={filtered}
             selectedConversationId={selectedConversationId}

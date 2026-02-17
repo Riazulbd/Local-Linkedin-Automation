@@ -43,31 +43,31 @@ export function FolderForm({ initial, onSubmit }: FolderFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-white/10 bg-white/5 p-3">
-      <h3 className="text-sm font-semibold text-white">{initial?.id ? 'Edit Folder' : 'New Folder'}</h3>
+    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <h3 className="text-sm font-semibold text-slate-900">{initial?.id ? 'Edit Folder' : 'New Folder'}</h3>
       <div className="mt-2 grid gap-2 md:grid-cols-3">
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Name
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-900"
           />
         </label>
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Color
           <input
             value={color}
             onChange={(event) => setColor(event.target.value)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-900"
           />
         </label>
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Description
           <input
             value={description || ''}
             onChange={(event) => setDescription(event.target.value)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-900"
           />
         </label>
       </div>

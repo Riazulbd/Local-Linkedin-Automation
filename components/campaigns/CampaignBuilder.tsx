@@ -84,19 +84,19 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <h3 className="text-sm font-semibold text-white">Create Campaign</h3>
+    <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-sm font-semibold text-slate-900">Create Campaign</h3>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Name
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900"
           />
         </label>
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Daily new leads
           <input
             type="number"
@@ -104,36 +104,36 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
             max={500}
             value={dailyNewLeads}
             onChange={(event) => setDailyNewLeads(Number(event.target.value) || 20)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900"
           />
         </label>
       </div>
 
-      <label className="mt-3 block text-xs text-white/70">
+      <label className="mt-3 block text-xs text-slate-600">
         Description
         <textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           rows={2}
-          className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white"
+          className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900"
         />
       </label>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Profile IDs (comma-separated)
           <input
             value={profileIdsRaw}
             onChange={(event) => setProfileIdsRaw(event.target.value)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900"
           />
         </label>
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Folder IDs (comma-separated)
           <input
             value={folderIdsRaw}
             onChange={(event) => setFolderIdsRaw(event.target.value)}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900"
           />
         </label>
       </div>
@@ -153,7 +153,7 @@ export function CampaignBuilder({ onSubmit, initialName = '' }: CampaignBuilderP
         <button
           type="button"
           onClick={addStep}
-          className="rounded-md border border-white/20 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10"
+          className="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
         >
           Add Step
         </button>

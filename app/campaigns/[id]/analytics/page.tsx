@@ -45,7 +45,7 @@ export default function CampaignAnalyticsPage() {
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <h1 className="text-xl font-semibold text-white">Campaign Analytics</h1>
+      <h1 className="text-xl font-semibold text-slate-900">Campaign Analytics</h1>
       {error && <p className="text-sm text-rose-300">{error}</p>}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -56,11 +56,11 @@ export default function CampaignAnalyticsPage() {
         <MetricCard label="Completion %" value={metrics.completionRate} />
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-        <h2 className="text-sm font-semibold text-white">Recent Step Results</h2>
-        <div className="mt-2 max-h-72 overflow-auto rounded-md border border-white/10">
-          <table className="min-w-full text-left text-xs text-white/70">
-            <thead className="bg-white/5 text-white/50">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h2 className="text-sm font-semibold text-slate-900">Recent Step Results</h2>
+        <div className="mt-2 max-h-72 overflow-auto rounded-md border border-slate-200">
+          <table className="min-w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-50 text-slate-400">
               <tr>
                 <th className="px-3 py-2">Lead</th>
                 <th className="px-3 py-2">Step</th>
@@ -70,7 +70,7 @@ export default function CampaignAnalyticsPage() {
             </thead>
             <tbody>
               {progress.map((row) => (
-                <tr key={row.id} className="border-t border-white/5">
+                <tr key={row.id} className="border-t border-slate-200">
                   <td className="px-3 py-2 font-mono text-[11px]">{row.lead_id.slice(0, 8)}</td>
                   <td className="px-3 py-2">{row.current_step + 1}</td>
                   <td className="px-3 py-2">{row.status}</td>
@@ -87,9 +87,9 @@ export default function CampaignAnalyticsPage() {
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <p className="text-[11px] uppercase tracking-wide text-white/50">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
+    <div className="rounded-lg border border-slate-200 bg-slate-100 p-3">
+      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
     </div>
   );
 }

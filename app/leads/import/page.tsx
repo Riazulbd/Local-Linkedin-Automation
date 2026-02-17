@@ -94,14 +94,14 @@ export default function LeadImportPage() {
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">CSV Lead Import</h1>
-        <p className="text-sm text-white/60">
+        <h1 className="text-xl font-semibold text-slate-900">CSV Lead Import</h1>
+        <p className="text-sm text-slate-500">
           Parse CSV, map columns, and bulk upload leads into selected profile.
         </p>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-        <label className="text-xs text-white/70">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <label className="text-xs text-slate-600">
           CSV File
           <input
             type="file"
@@ -110,7 +110,7 @@ export default function LeadImportPage() {
               const file = event.target.files?.[0];
               if (file) onFileSelected(file);
             }}
-            className="mt-1 block text-xs text-white/80"
+            className="mt-1 block text-xs text-slate-700"
           />
         </label>
       </div>

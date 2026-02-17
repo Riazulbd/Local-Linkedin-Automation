@@ -180,14 +180,14 @@ export function StatusBar() {
     failed: { icon: XCircle, color: 'text-error', text: 'Mission Failed' },
     stopped: { icon: PauseCircle, color: 'text-warning', text: 'Mission Paused' },
     completed: { icon: CheckCircle2, color: 'text-success', text: 'Mission Accomplished' },
-    ready: { icon: Database, color: 'text-white/40', text: 'Ready for Tasking' },
+    ready: { icon: Database, color: 'text-slate-500', text: 'Ready for Tasking' },
   };
 
   const currentStatus = (statusConfig[runState as keyof typeof statusConfig] || statusConfig.ready);
   const StatusIcon = currentStatus.icon;
 
   return (
-    <footer className="z-50 flex h-14 items-center justify-between border-t border-white/5 bg-[#0d0d14] px-6 text-[11px] font-bold tracking-wider">
+    <footer className="z-50 flex h-14 items-center justify-between border-t border-slate-200 bg-slate-50 px-6 text-[11px] font-semibold tracking-wider text-slate-600">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 px-1">
           <button
@@ -197,8 +197,8 @@ export function StatusBar() {
             className={cn(
               "flex h-8 items-center gap-2 rounded-lg px-4 transition-all duration-300",
               canRun
-                ? "bg-accent text-white shadow-glow hover:bg-accent-hover active:scale-95"
-                : "bg-white/5 text-white/20"
+                ? "bg-slate-900 text-white hover:bg-slate-800 active:scale-95"
+                : "bg-slate-200 text-slate-400"
             )}
           >
             {requestLoading && runState !== 'running' ? (
@@ -214,9 +214,9 @@ export function StatusBar() {
             disabled={(runState !== 'running' && !currentRunId) || requestLoading}
             onClick={handleStop}
             className={cn(
-              "flex h-8 items-center gap-2 rounded-lg border border-white/10 px-4 transition-all duration-300",
+              "flex h-8 items-center gap-2 rounded-lg border border-slate-300 px-4 transition-all duration-300",
               (runState === 'running' || currentRunId)
-                ? "bg-white/5 text-white/70 hover:bg-white/10 hover:text-white active:scale-95"
+                ? "bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 active:scale-95"
                 : "opacity-20 grayscale"
             )}
           >
@@ -227,13 +227,13 @@ export function StatusBar() {
       </div>
 
       <div className="flex items-center gap-8">
-        <div className="flex items-center gap-2 text-white/40 grayscale transition-all duration-500 hover:grayscale-0">
+        <div className="flex items-center gap-2 text-slate-500 transition-all duration-500">
           <Database className="h-3.5 w-3.5" />
-          <span>LEADS IN QUEUE: <span className="text-white">{pendingLeads.length}</span></span>
+          <span>LEADS IN QUEUE: <span className="text-slate-900">{pendingLeads.length}</span></span>
         </div>
 
         <div className={cn(
-          "flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 transition-all duration-500",
+          "flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 transition-all duration-500",
           currentStatus.color
         )}>
           <StatusIcon className={cn("h-3.5 w-3.5", runState === 'running' && "animate-pulse")} />

@@ -20,9 +20,9 @@ interface CampaignStepEditorProps {
 
 export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEditorProps) {
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-100 p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-white/80">Step {step.order + 1}</span>
+        <span className="text-xs font-semibold text-slate-700">Step {step.order + 1}</span>
         {onDelete && (
           <button
             type="button"
@@ -35,7 +35,7 @@ export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEdi
       </div>
 
       <div className="mt-2 grid gap-2 md:grid-cols-2">
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Type
           <select
             value={step.type}
@@ -45,7 +45,7 @@ export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEdi
                 type: event.target.value as CampaignStepType,
               })
             }
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900"
           >
             {STEP_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -55,19 +55,19 @@ export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEdi
           </select>
         </label>
 
-        <label className="text-xs text-white/70">
+        <label className="text-xs text-slate-600">
           Label
           <input
             value={step.label || ''}
             onChange={(event) => onChange({ ...step, label: event.target.value })}
             placeholder="Optional label"
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400"
           />
         </label>
       </div>
 
       {step.type === 'send_connection' && (
-        <label className="mt-2 block text-xs text-white/70">
+        <label className="mt-2 block text-xs text-slate-600">
           Connection note template
           <textarea
             value={step.config.connectionNote || ''}
@@ -78,13 +78,13 @@ export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEdi
               })
             }
             rows={2}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400"
           />
         </label>
       )}
 
       {step.type === 'send_message' && (
-        <label className="mt-2 block text-xs text-white/70">
+        <label className="mt-2 block text-xs text-slate-600">
           Message template
           <textarea
             value={step.config.messageTemplate || ''}
@@ -95,13 +95,13 @@ export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEdi
               })
             }
             rows={3}
-            className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400"
           />
         </label>
       )}
 
       {step.type === 'wait_days' && (
-        <label className="mt-2 block text-xs text-white/70">
+        <label className="mt-2 block text-xs text-slate-600">
           Wait days
           <input
             type="number"
@@ -113,7 +113,7 @@ export function CampaignStepEditor({ step, onChange, onDelete }: CampaignStepEdi
                 config: { ...step.config, days: Number(event.target.value) || 1 },
               })
             }
-            className="mt-1 w-28 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white"
+            className="mt-1 w-28 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900"
           />
         </label>
       )}

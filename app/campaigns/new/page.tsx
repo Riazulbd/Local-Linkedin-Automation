@@ -11,8 +11,8 @@ export default function NewCampaignPage() {
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">Create Campaign</h1>
-        <p className="text-sm text-white/60">Define sequence steps, folders, and profile mappings.</p>
+        <h1 className="text-xl font-semibold text-slate-900">Create Campaign</h1>
+        <p className="text-sm text-slate-500">Define sequence steps, folders, and profile mappings.</p>
       </div>
 
       <CampaignBuilder

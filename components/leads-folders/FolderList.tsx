@@ -13,7 +13,7 @@ interface FolderListProps {
 export function FolderList({ folders, selectedFolderId = null, onSelect, onDelete }: FolderListProps) {
   if (!folders.length) {
     return (
-      <div className="rounded-lg border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/60">
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
         No folders created.
       </div>
     );
@@ -27,7 +27,7 @@ export function FolderList({ folders, selectedFolderId = null, onSelect, onDelet
           className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
             selectedFolderId === folder.id
               ? 'border-cyan-400/40 bg-cyan-500/10'
-              : 'border-white/10 bg-white/5'
+              : 'border-slate-200 bg-slate-50'
           }`}
         >
           <button
@@ -36,7 +36,7 @@ export function FolderList({ folders, selectedFolderId = null, onSelect, onDelet
             className="text-left"
           >
             <FolderBadge folder={folder} />
-            <p className="mt-1 text-xs text-white/50">{folder.description || 'No description'}</p>
+            <p className="mt-1 text-xs text-slate-400">{folder.description || 'No description'}</p>
           </button>
 
           <button

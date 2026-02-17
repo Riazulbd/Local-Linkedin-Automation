@@ -25,18 +25,18 @@ export function CampaignCard({
       className={`rounded-xl border p-4 transition ${
         selected
           ? 'border-cyan-400/50 bg-cyan-500/10'
-          : 'border-white/10 bg-white/5 hover:border-white/20'
+          : 'border-slate-200 bg-slate-50 hover:border-slate-300'
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-white">{campaign.name}</h3>
-          <p className="mt-1 text-xs text-white/60">{campaign.description || 'No description'}</p>
+          <h3 className="text-sm font-semibold text-slate-900">{campaign.name}</h3>
+          <p className="mt-1 text-xs text-slate-500">{campaign.description || 'No description'}</p>
         </div>
         <CampaignStatusBadge status={campaign.status} />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
         <span>Steps: {Array.isArray(campaign.sequence) ? campaign.sequence.length : 0}</span>
         <span>Daily cap: {campaign.daily_new_leads}</span>
       </div>
@@ -45,7 +45,7 @@ export function CampaignCard({
         <button
           type="button"
           onClick={() => onSelect?.(campaign.id)}
-          className="rounded-lg border border-white/15 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10"
+          className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
         >
           Open
         </button>

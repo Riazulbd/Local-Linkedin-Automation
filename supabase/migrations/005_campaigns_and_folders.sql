@@ -1,7 +1,7 @@
 -- ─────────────────────────────────────────────────────
 -- LEAD FOLDERS
 -- ─────────────────────────────────────────────────────
-CREATE TABLE lead_folders (
+CREATE TABLE IF NOT EXISTS lead_folders (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name          TEXT NOT NULL,
   description   TEXT,
@@ -12,13 +12,13 @@ CREATE TABLE lead_folders (
 );
 
 -- Leads now have an optional folder_id
-ALTER TABLE leads ADD COLUMN folder_id UUID REFERENCES lead_folders(id) ON DELETE SET NULL;
-CREATE INDEX idx_leads_folder ON leads(folder_id);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES lead_folders(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_leads_folder ON leads(folder_id);
 
 -- ─────────────────────────────────────────────────────
 -- CAMPAIGNS
 -- ─────────────────────────────────────────────────────
-CREATE TABLE campaigns (
+CREATE TABLE IF NOT EXISTS campaigns (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name            TEXT NOT NULL,
   description     TEXT,
@@ -31,7 +31,7 @@ CREATE TABLE campaigns (
 );
 
 -- Many-to-many: campaign <-> linkedin_profiles
-CREATE TABLE campaign_profiles (
+CREATE TABLE IF NOT EXISTS campaign_profiles (
   campaign_id  UUID REFERENCES campaigns(id) ON DELETE CASCADE,
   profile_id   UUID REFERENCES linkedin_profiles(id) ON DELETE CASCADE,
   status       TEXT DEFAULT 'active' CHECK (status IN ('active','paused','removed')),
@@ -39,14 +39,14 @@ CREATE TABLE campaign_profiles (
 );
 
 -- Many-to-many: campaign <-> lead_folders
-CREATE TABLE campaign_lead_folders (
+CREATE TABLE IF NOT EXISTS campaign_lead_folders (
   campaign_id    UUID REFERENCES campaigns(id) ON DELETE CASCADE,
   folder_id      UUID REFERENCES lead_folders(id) ON DELETE CASCADE,
   PRIMARY KEY (campaign_id, folder_id)
 );
 
 -- Track each lead's progress through a campaign sequence
-CREATE TABLE campaign_lead_progress (
+CREATE TABLE IF NOT EXISTS campaign_lead_progress (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   campaign_id     UUID REFERENCES campaigns(id) ON DELETE CASCADE,
   lead_id         UUID REFERENCES leads(id) ON DELETE CASCADE,
@@ -61,14 +61,14 @@ CREATE TABLE campaign_lead_progress (
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(campaign_id, lead_id)
 );
-CREATE INDEX idx_clp_next_action ON campaign_lead_progress(next_action_at) WHERE status = 'waiting';
-CREATE INDEX idx_clp_campaign    ON campaign_lead_progress(campaign_id);
-CREATE INDEX idx_clp_profile     ON campaign_lead_progress(profile_id);
+CREATE INDEX IF NOT EXISTS idx_clp_next_action ON campaign_lead_progress(next_action_at) WHERE status = 'waiting';
+CREATE INDEX IF NOT EXISTS idx_clp_campaign    ON campaign_lead_progress(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_clp_profile     ON campaign_lead_progress(profile_id);
 
 -- ─────────────────────────────────────────────────────
 -- UNIBOX: CONVERSATIONS & MESSAGES
 -- ─────────────────────────────────────────────────────
-CREATE TABLE unibox_conversations (
+CREATE TABLE IF NOT EXISTS unibox_conversations (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id            UUID REFERENCES linkedin_profiles(id) ON DELETE CASCADE,
   linkedin_thread_id    TEXT NOT NULL,
@@ -84,7 +84,7 @@ CREATE TABLE unibox_conversations (
   UNIQUE(profile_id, linkedin_thread_id)
 );
 
-CREATE TABLE unibox_messages (
+CREATE TABLE IF NOT EXISTS unibox_messages (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id     UUID REFERENCES unibox_conversations(id) ON DELETE CASCADE,
   linkedin_message_id TEXT,
@@ -95,14 +95,14 @@ CREATE TABLE unibox_messages (
   created_at          TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(conversation_id, linkedin_message_id)
 );
-CREATE INDEX idx_unibox_conv_profile ON unibox_conversations(profile_id);
-CREATE INDEX idx_unibox_msg_conv     ON unibox_messages(conversation_id);
-CREATE INDEX idx_unibox_msg_sent     ON unibox_messages(sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_unibox_conv_profile ON unibox_conversations(profile_id);
+CREATE INDEX IF NOT EXISTS idx_unibox_msg_conv     ON unibox_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_unibox_msg_sent     ON unibox_messages(sent_at DESC);
 
 -- ─────────────────────────────────────────────────────
 -- 2FA AUTH EVENTS (realtime channel for 2FA relay)
 -- ─────────────────────────────────────────────────────
-CREATE TABLE auth_events (
+CREATE TABLE IF NOT EXISTS auth_events (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id  UUID REFERENCES linkedin_profiles(id) ON DELETE CASCADE,
   event_type  TEXT NOT NULL CHECK (event_type IN ('login_required','2fa_required','2fa_submitted','login_success','login_failed')),
@@ -111,17 +111,36 @@ CREATE TABLE auth_events (
   resolved    BOOLEAN DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX idx_auth_events_profile ON auth_events(profile_id, resolved);
+CREATE INDEX IF NOT EXISTS idx_auth_events_profile ON auth_events(profile_id, resolved);
 
 -- Add credential columns to linkedin_profiles
 ALTER TABLE linkedin_profiles
-  ADD COLUMN linkedin_email_login     TEXT,
-  ADD COLUMN linkedin_password_enc    TEXT,
-  ADD COLUMN session_valid            BOOLEAN DEFAULT false,
-  ADD COLUMN last_login_at            TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS linkedin_email_login     TEXT,
+  ADD COLUMN IF NOT EXISTS linkedin_password_enc    TEXT,
+  ADD COLUMN IF NOT EXISTS session_valid            BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS last_login_at            TIMESTAMPTZ;
 
--- Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE unibox_conversations;
-ALTER PUBLICATION supabase_realtime ADD TABLE unibox_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE auth_events;
-ALTER PUBLICATION supabase_realtime ADD TABLE campaign_lead_progress;
+-- Realtime (idempotent)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE unibox_conversations;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE unibox_messages;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE auth_events;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE campaign_lead_progress;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END
+$$;

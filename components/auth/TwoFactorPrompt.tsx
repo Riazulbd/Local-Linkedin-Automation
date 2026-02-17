@@ -42,20 +42,20 @@ export function TwoFactorPrompt({ defaultProfileId = '' }: TwoFactorPromptProps)
   }
 
   return (
-    <form onSubmit={submitCode} className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <h3 className="text-sm font-semibold text-white">Two-Factor Code</h3>
+    <form onSubmit={submitCode} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-sm font-semibold text-slate-900">Two-Factor Code</h3>
       <div className="mt-3 grid gap-2 md:grid-cols-2">
         <input
           value={profileId}
           onChange={(event) => setProfileId(event.target.value)}
           placeholder="Profile ID"
-          className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35"
+          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
         />
         <input
           value={code}
           onChange={(event) => setCode(event.target.value)}
           placeholder="Verification code"
-          className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35"
+          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
         />
       </div>
       <button

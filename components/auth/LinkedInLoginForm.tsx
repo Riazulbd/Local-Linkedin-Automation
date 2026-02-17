@@ -49,27 +49,27 @@ export function LinkedInLoginForm({ defaultProfileId = '', onSuccess }: LinkedIn
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <h3 className="text-sm font-semibold text-white">LinkedIn Login</h3>
+    <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-sm font-semibold text-slate-900">LinkedIn Login</h3>
       <div className="mt-3 grid gap-2 md:grid-cols-3">
         <input
           value={profileId}
           onChange={(event) => setProfileId(event.target.value)}
           placeholder="Profile ID"
-          className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35"
+          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
         />
         <input
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="LinkedIn email"
-          className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35"
+          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
         />
         <input
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="LinkedIn password"
-          className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35"
+          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
         />
       </div>
       <button
