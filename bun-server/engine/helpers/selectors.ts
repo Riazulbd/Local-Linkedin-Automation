@@ -70,9 +70,14 @@ export const LI = {
   // ── Messaging ─────────────────────────────────────────────────
   messageComposeBox: [
     '.msg-form__contenteditable[contenteditable="true"]',
+    '.msg-overlay-conversation-bubble .msg-form__contenteditable[contenteditable="true"]',
     '.msg-form__msg-content-container [contenteditable="true"]',
     '.msg-form__msg-content-container [role="textbox"]',
+    '.msg-overlay-bubble-header ~ * [contenteditable="true"][role="textbox"]',
     '.msg-s-message-list-container [role="textbox"][contenteditable="true"]',
+    '[aria-label*="Write a message"][contenteditable="true"]',
+    'div[contenteditable="true"][data-placeholder*="message"]',
+    'textarea[name="message"]',
     'div.msg-form__contenteditable[role="textbox"]',
     '[contenteditable="true"][role="textbox"]',
     '[data-artdeco-is-focused] [contenteditable]',
@@ -80,7 +85,10 @@ export const LI = {
   ],
   messageSendBtn: [
     '.msg-form__send-button',
+    '.msg-form__send-button:not([disabled])',
+    'button.msg-form__send-button[aria-disabled="false"]',
     '.msg-form__right-actions button[type="submit"]',
+    'footer button[type="submit"]',
     'button[aria-label^="Send"]',
     'button[aria-label*="Send message"]',
     'button[type="submit"]:has-text("Send")',
@@ -119,10 +127,21 @@ export async function findFirst(
   selectors: readonly string[],
   timeout = 2000
 ): Promise<import('playwright').Locator | null> {
+  const maxCandidatesPerSelector = 8;
+
   for (const sel of selectors) {
     try {
-      const loc = page.locator(sel).first();
-      if (await loc.isVisible({ timeout })) return loc;
+      const root = page.locator(sel);
+      const count = Math.min(await root.count(), maxCandidatesPerSelector);
+      if (count === 0) continue;
+
+      for (let idx = 0; idx < count; idx += 1) {
+        const candidate = root.nth(idx);
+        const candidateTimeout = idx === 0 ? timeout : 250;
+        if (await candidate.isVisible({ timeout: candidateTimeout })) {
+          return candidate;
+        }
+      }
     } catch {}
   }
   return null;

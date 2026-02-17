@@ -37,7 +37,7 @@ async function resolveMessageButton(page: Page) {
 }
 
 async function waitForComposeBox(page: Page) {
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
     const composeBox = await findFirst(page, LI.messageComposeBox, 3000);
     if (composeBox) {
       return composeBox;
@@ -73,9 +73,22 @@ export async function sendMessage(page: Page, data: SendMessageData, lead: Lead)
     await humanClick(page, messageBtn);
     await actionDelay();
 
-    const composeBox = await waitForComposeBox(page);
+    let composeBox = await waitForComposeBox(page);
     if (!composeBox) {
-      await actionLogger.log('send_message', 'send_message', 'error', 'Message compose box not found', lead.id);
+      // LinkedIn sometimes opens a shell first and needs a second click to focus the chat composer.
+      await humanClick(page, messageBtn).catch(() => undefined);
+      await actionDelay();
+      composeBox = await waitForComposeBox(page);
+    }
+
+    if (!composeBox) {
+      await actionLogger.log(
+        'send_message',
+        'send_message',
+        'error',
+        `Message compose box not found (url: ${page.url()})`,
+        lead.id
+      );
       return { success: false, error: 'Message compose box not found' };
     }
 
