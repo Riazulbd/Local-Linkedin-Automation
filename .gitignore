@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+bun.lockb
+
+# next
+.next/
+out/
+
+# environment
+.env*
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# vscode
+.vscode/
+
+# local runtime files
+bun-server/session.json

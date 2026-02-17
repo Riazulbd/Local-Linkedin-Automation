@@ -1,0 +1,34 @@
+FROM oven/bun:1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgbm1 \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libasound2 \
+    xvfb \
+    x11vnc \
+    fluxbox \
+    novnc \
+    websockify \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY bun-server/package.json bun-server/bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY bun-server/ ./
+
+RUN bunx playwright install chromium
+
+COPY bun-server/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENV BUN_SERVER_PORT=3001
+
+EXPOSE 3001 6080
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["node", "--import", "tsx", "index.ts"]

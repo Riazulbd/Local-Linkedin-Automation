@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "3001:3001"
+      - "6080:6080"
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      HEADLESS: ${HEADLESS:-false}
+      ADSPOWER_BASE_URL: ${ADSPOWER_BASE_URL:-http://host.docker.internal:50325}
+      ADSPOWER_WS_HOST: ${ADSPOWER_WS_HOST:-host.docker.internal}
+      ADSPOWER_CONNECT_TIMEOUT_MS: ${ADSPOWER_CONNECT_TIMEOUT_MS:-10000}
+      ADSPOWER_CONNECT_RETRIES: ${ADSPOWER_CONNECT_RETRIES:-8}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      BUN_SERVER_URL: http://backend:3001
+    depends_on:
+      backend:
+        condition: service_healthy
