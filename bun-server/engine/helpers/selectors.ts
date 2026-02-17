@@ -24,9 +24,22 @@ export const LI = {
     '[aria-label*="Connect"] li',
   ],
   messageBtn: [
+    'main button[aria-label^="Message "]',
+    'button[aria-label^="Message "]',
+    'button[aria-label*="Message"][class*="artdeco-button"]',
+    'button.pvs-profile-actions__action:has-text("Message")',
+    'button.pvs-sticky-header-profile-actions__action:has-text("Message")',
+    '[data-control-name="message"]',
+    '[data-control-name*="message"]',
     'button:has-text("Message")',
     '[aria-label^="Message"]',
     'a:has-text("Message")',
+  ],
+  messageInMoreMenu: [
+    'div[role="menu"] button:has-text("Message")',
+    'ul[role="menu"] button:has-text("Message")',
+    'li button:has-text("Message")',
+    '[role="menuitem"]:has-text("Message")',
   ],
   pendingBtn: [
     'button:has-text("Pending")',
@@ -57,11 +70,19 @@ export const LI = {
   // ── Messaging ─────────────────────────────────────────────────
   messageComposeBox: [
     '.msg-form__contenteditable[contenteditable="true"]',
+    '.msg-form__msg-content-container [contenteditable="true"]',
+    '.msg-form__msg-content-container [role="textbox"]',
+    '.msg-s-message-list-container [role="textbox"][contenteditable="true"]',
+    'div.msg-form__contenteditable[role="textbox"]',
+    '[contenteditable="true"][role="textbox"]',
     '[data-artdeco-is-focused] [contenteditable]',
     '.msg-s-message-list-container [contenteditable]',
   ],
   messageSendBtn: [
     '.msg-form__send-button',
+    '.msg-form__right-actions button[type="submit"]',
+    'button[aria-label^="Send"]',
+    'button[aria-label*="Send message"]',
     'button[type="submit"]:has-text("Send")',
     'button[aria-label="Send"]',
   ],
