@@ -20,3 +20,6 @@ yarn-error.log*
 
 # local runtime files
 bun-server/session.json
+
+# windows artifact
+nul
