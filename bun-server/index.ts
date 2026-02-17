@@ -1,6 +1,9 @@
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { WorkflowExecutor } from './engine/WorkflowExecutor';
+import { CampaignExecutor } from './engine/CampaignExecutor';
+import { UniboxSyncer } from './engine/UniboxSyncer';
+import { LoginManager } from './engine/LoginManager';
 import { loadLocalEnv } from './loadEnv';
 import { logger } from './logger';
 import { runProxyTest } from './proxyTest';
@@ -75,7 +78,12 @@ function writeText(
   res.end(text);
 }
 
-function buildServer(executor: WorkflowExecutor) {
+function buildServer(
+  executor: WorkflowExecutor,
+  campaignExecutor: CampaignExecutor,
+  uniboxSyncer: UniboxSyncer,
+  loginManager: LoginManager
+) {
   return createServer(async (req, res) => {
   const method = req.method || 'GET';
   const requestOrigin = req.headers.origin;
@@ -105,6 +113,102 @@ function buildServer(executor: WorkflowExecutor) {
   logger.info('Received Bun server request', { path: url.pathname, method });
 
   try {
+    if (method === 'POST' && url.pathname === '/campaigns/start') {
+      const body = (await readJsonBody(req as any)) as { campaignId?: string };
+      const result = await campaignExecutor.start({
+        campaignId: typeof body.campaignId === 'string' ? body.campaignId : undefined,
+      });
+      writeJson(res, 200, result, requestOrigin);
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/campaigns/stop') {
+      const body = (await readJsonBody(req as any)) as { campaignId?: string };
+      const result = await campaignExecutor.stop({
+        campaignId: typeof body.campaignId === 'string' ? body.campaignId : undefined,
+      });
+      writeJson(res, 200, result, requestOrigin);
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/campaigns/status') {
+      writeJson(res, 200, campaignExecutor.getStatus(), requestOrigin);
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/unibox/sync') {
+      const body = (await readJsonBody(req as any)) as {
+        profileId?: string;
+        allProfiles?: boolean;
+      };
+
+      if (body.allProfiles) {
+        const result = await uniboxSyncer.syncAllProfiles();
+        writeJson(res, 200, result, requestOrigin);
+        return;
+      }
+
+      if (!body.profileId) {
+        writeJson(res, 400, { error: 'profileId or allProfiles=true is required' }, requestOrigin);
+        return;
+      }
+
+      const result = await uniboxSyncer.syncProfile(body.profileId);
+      writeJson(res, 200, result, requestOrigin);
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/unibox/status') {
+      writeJson(res, 200, uniboxSyncer.getStatus(), requestOrigin);
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/auth/login') {
+      const body = (await readJsonBody(req as any)) as {
+        profileId?: string;
+        email?: string;
+        password?: string;
+      };
+
+      if (!body.profileId || !body.email || !body.password) {
+        writeJson(res, 400, { error: 'profileId, email, and password are required' }, requestOrigin);
+        return;
+      }
+
+      const result = await loginManager.login({
+        profileId: body.profileId,
+        email: body.email,
+        password: body.password,
+      });
+      writeJson(res, 200, result, requestOrigin);
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/auth/2fa') {
+      const body = (await readJsonBody(req as any)) as {
+        profileId?: string;
+        code?: string;
+      };
+
+      if (!body.profileId || !body.code) {
+        writeJson(res, 400, { error: 'profileId and code are required' }, requestOrigin);
+        return;
+      }
+
+      const result = await loginManager.submitTwoFactor({
+        profileId: body.profileId,
+        code: body.code,
+      });
+      writeJson(res, 200, result, requestOrigin);
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/auth/status') {
+      const profileId = url.searchParams.get('profileId') ?? undefined;
+      writeJson(res, 200, loginManager.getStatus(profileId), requestOrigin);
+      return;
+    }
+
     if (method === 'POST' && url.pathname === '/start') {
       const body = await readJsonBody(req as any);
       const runId = await executor.start(body as any);
@@ -196,7 +300,10 @@ function buildServer(executor: WorkflowExecutor) {
 async function main() {
   await loadLocalEnv();
   const executor = new WorkflowExecutor();
-  const server = buildServer(executor);
+  const campaignExecutor = new CampaignExecutor();
+  const uniboxSyncer = new UniboxSyncer();
+  const loginManager = new LoginManager();
+  const server = buildServer(executor, campaignExecutor, uniboxSyncer, loginManager);
 
   server.listen(port, () => {
     logger.info('Automation server started', {

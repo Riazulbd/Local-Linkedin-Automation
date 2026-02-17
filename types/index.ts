@@ -3,3 +3,6 @@ export * from './workflow.types';
 export * from './lead.types';
 export * from './execution.types';
 export * from './api.types';
+export * from './campaign.types';
+export * from './lead-folder.types';
+export * from './unibox.types';

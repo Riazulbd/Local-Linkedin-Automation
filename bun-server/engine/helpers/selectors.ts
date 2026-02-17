@@ -1,21 +1,108 @@
-export const LinkedInSelectors = {
-  profile: {
-    actionButtons: [
-      'button:has-text("Message")',
-      'button:has-text("Connect")',
-      'button:has-text("Follow")',
-      'button:has-text("Following")',
-    ],
-  },
-  messaging: {
-    openButton: ['button:has-text("Message")'],
-    composeBox: ['.msg-form__contenteditable', '[contenteditable="true"][role="textbox"]'],
-    sendButton: ['.msg-form__send-button', 'button[type="submit"]'],
-  },
-  connection: {
-    connectButton: ['button:has-text("Connect")'],
-    addNoteButton: ['button:has-text("Add a note")'],
-    noteField: ['textarea[name="message"]', 'textarea#custom-message'],
-    sendInviteButton: ['button:has-text("Send"), button:has-text("Send invitation")'],
-  },
-};
+export const LI = {
+  // ── Profile Actions ──────────────────────────────────────────
+  followBtn: [
+    'button:has-text("Follow"):not(:has-text("Following"))',
+    '[aria-label="Follow"]',
+    'button[data-test-follow-btn]',
+  ],
+  followingBtn: [
+    'button:has-text("Following")',
+    '[aria-label="Following"]',
+  ],
+  connectBtn: [
+    'button:has-text("Connect")',
+    '[aria-label^="Connect"]',
+    'button[data-test-connect-btn]',
+  ],
+  moreActionsBtn: [
+    'button:has-text("More")',
+    '[aria-label="More actions"]',
+    'button[id*="overflow"]',
+  ],
+  connectInMoreMenu: [
+    'li button:has-text("Connect")',
+    '[aria-label*="Connect"] li',
+  ],
+  messageBtn: [
+    'button:has-text("Message")',
+    '[aria-label^="Message"]',
+    'a:has-text("Message")',
+  ],
+  pendingBtn: [
+    'button:has-text("Pending")',
+    '[aria-label*="Pending"]',
+  ],
+
+  // ── Connection Request Modal ──────────────────────────────────
+  sendWithoutNoteBtn: [
+    'button[aria-label="Send without a note"]',
+    'button:has-text("Send without a note")',
+    '[data-test-modal-container] button:has-text("Send")',
+  ],
+  addNoteBtn: [
+    'button:has-text("Add a note")',
+    'button[aria-label="Add a note"]',
+  ],
+  connectionNoteTextarea: [
+    'textarea[name="message"]',
+    '#custom-message',
+    'textarea[placeholder*="note"]',
+  ],
+  sendInviteBtn: [
+    'button[aria-label="Send invitation"]',
+    'button:has-text("Send invitation")',
+    '[data-test-modal-container] button[type="submit"]',
+  ],
+
+  // ── Messaging ─────────────────────────────────────────────────
+  messageComposeBox: [
+    '.msg-form__contenteditable[contenteditable="true"]',
+    '[data-artdeco-is-focused] [contenteditable]',
+    '.msg-s-message-list-container [contenteditable]',
+  ],
+  messageSendBtn: [
+    '.msg-form__send-button',
+    'button[type="submit"]:has-text("Send")',
+    'button[aria-label="Send"]',
+  ],
+
+  // ── LinkedIn Inbox page (/messaging/) ────────────────────────
+  inboxConversationList: [
+    '.msg-conversations-container__conversations-list',
+    '.scaffold-layout__list-container',
+  ],
+  inboxConversationItem: [
+    '.msg-conversation-listitem',
+    'li[data-test-list-item]',
+  ],
+  inboxMessageList: [
+    '.msg-s-message-list',
+    '.scaffold-layout__detail',
+  ],
+  inboxMessageItem: [
+    '.msg-s-message-list__event',
+    '[data-event-urn]',
+  ],
+
+  // ── Profile page ─────────────────────────────────────────────
+  profileName: ['h1.text-heading-xlarge', 'h1.inline.t-24'],
+  profileHeadline: ['.text-body-medium.break-words', '.pv-top-card--list .t-16'],
+  profileConnectionDegree: [
+    '.dist-value',
+    '[data-test-connection-degree]',
+  ],
+} as const;
+
+export async function findFirst(
+  page: import('playwright').Page,
+  selectors: readonly string[],
+  timeout = 2000
+): Promise<import('playwright').Locator | null> {
+  for (const sel of selectors) {
+    try {
+      const loc = page.locator(sel).first();
+      if (await loc.isVisible({ timeout })) return loc;
+    } catch {}
+  }
+  return null;
+}

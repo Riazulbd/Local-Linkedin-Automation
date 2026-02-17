@@ -1,106 +1,64 @@
-import type { Locator, Page } from 'playwright';
-import { humanClick, findButtonByText } from '../helpers/humanBehavior';
+import type { Page } from 'playwright';
+import type { ActionResult, CampaignStep, Lead } from '../../../types';
+import { LI, findFirst } from '../helpers/selectors';
+import { actionDelay, humanClick } from '../helpers/humanBehavior';
+import { withPopupGuard } from '../helpers/popupGuard';
+import { Logger } from '../../lib/logger';
 
-async function isVisible(locator: Locator) {
-  return locator.isVisible().catch(() => false);
-}
+type FollowProfileData = Partial<CampaignStep['config']> & {
+  fallbackToConnect?: boolean;
+  runId?: string;
+};
 
-async function findFirstVisible(candidates: Locator[]): Promise<Locator | null> {
-  for (const candidate of candidates) {
-    if (await isVisible(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
+const actionLogger = new Logger(process.env.ACTION_LOG_RUN_ID ?? 'runtime_follow_profile');
 
-async function waitForFollowConfirmation(page: Page, timeoutMs = 4000) {
-  const startedAt = Date.now();
-  const confirmation = page
-    .locator('button:has-text("Following"), button:has-text("Pending"), button:has-text("Requested")')
-    .first();
+export async function followProfile(page: Page, data: FollowProfileData, lead: Lead): Promise<ActionResult> {
+  await actionLogger.log('follow_profile', 'follow_profile', 'running', 'Checking follow state', lead.id);
 
-  while (Date.now() - startedAt < timeoutMs) {
-    if (await isVisible(confirmation)) {
-      return true;
-    }
-    await page.waitForTimeout(250);
-  }
-
-  return false;
-}
-
-export async function followProfile(page: Page, data: any, _lead: any) {
-  await page.waitForTimeout(1000);
-
-  const alreadyFollowing = page
-    .locator('button:has-text("Following"), button:has-text("Pending"), button:has-text("Requested")')
-    .first();
-  if (await isVisible(alreadyFollowing)) {
-    return { success: true, action: 'already_following' };
-  }
-
-  const followBtn = await findFirstVisible([
-    page.locator('main button[aria-label^="Follow "]:not(.pvs-sticky-header-profile-actions__action)').first(),
-    page.locator('button[aria-label^="Follow "]:not(.pvs-sticky-header-profile-actions__action)').first(),
-    page.locator('button:has-text("Follow"):not(.pvs-sticky-header-profile-actions__action)').first(),
-    page.locator('button[aria-label^="Follow "]').first(),
-  ]);
-
-  let followClicked = false;
-  if (followBtn) {
-    await humanClick(followBtn, { timeoutMs: 10000, retries: 6 });
-    followClicked = true;
-  } else {
-    const fallbackFollowBtn = await findButtonByText(page, 'Follow');
-    if (fallbackFollowBtn) {
-      await humanClick(fallbackFollowBtn, { timeoutMs: 10000, retries: 6 });
-      followClicked = true;
-    }
-  }
-
-  if (followClicked) {
-    await page.waitForTimeout(1000 + Math.random() * 900);
-    if (await waitForFollowConfirmation(page, 5000)) {
-      return { success: true, action: 'followed' };
+  return withPopupGuard(page, async () => {
+    const alreadyFollowing = await findFirst(page, LI.followingBtn, 1200);
+    if (alreadyFollowing) {
+      await actionLogger.log('follow_profile', 'follow_profile', 'success', 'Already following', lead.id);
+      return { success: true, action: 'already_following' };
     }
 
-    if (data.fallbackToConnect === false) {
-      return { success: true, action: 'follow_clicked_unverified' };
+    const followBtn = await findFirst(page, LI.followBtn, 2500);
+    if (followBtn) {
+      await humanClick(page, followBtn);
+      await actionDelay();
+
+      const confirmed = await findFirst(page, LI.followingBtn, 3000);
+      await actionLogger.log(
+        'follow_profile',
+        'follow_profile',
+        'success',
+        confirmed ? 'Followed profile' : 'Follow clicked, awaiting state refresh',
+        lead.id
+      );
+      return {
+        success: true,
+        action: confirmed ? 'followed' : 'follow_clicked_unverified',
+      };
     }
-  }
 
-  if (data.fallbackToConnect !== false) {
-    const connectBtn = await findFirstVisible([
-      page.locator('main button:has-text("Connect"):not(.pvs-sticky-header-profile-actions__action)').first(),
-      page.locator('button:has-text("Connect"):not(.pvs-sticky-header-profile-actions__action)').first(),
-      page.locator('button[aria-label^="Invite"]').first(),
-    ]);
+    if (data.fallbackToConnect !== false) {
+      const connectBtn = await findFirst(page, LI.connectBtn, 1800);
+      if (connectBtn) {
+        await humanClick(page, connectBtn);
+        await actionDelay();
 
-    const resolvedConnectBtn = connectBtn || (await findButtonByText(page, 'Connect'));
-    if (resolvedConnectBtn) {
-      await humanClick(resolvedConnectBtn, { timeoutMs: 9000, retries: 5 });
-      await page.waitForTimeout(1200 + Math.random() * 600);
+        const sendWithoutNote = await findFirst(page, LI.sendWithoutNoteBtn, 2200);
+        if (sendWithoutNote) {
+          await humanClick(page, sendWithoutNote);
+          await actionDelay();
+        }
 
-      const sendNowBtn = await findFirstVisible([
-        page
-          .locator(
-            'button:has-text("Send without a note"), button[aria-label="Send now"], button:has-text("Send")'
-          )
-          .first(),
-      ]);
-
-      if (sendNowBtn) {
-        await humanClick(sendNowBtn, { timeoutMs: 8000, retries: 4 });
+        await actionLogger.log('follow_profile', 'follow_profile', 'success', 'Follow unavailable, sent connection', lead.id);
+        return { success: true, action: 'connection_sent' };
       }
-
-      return { success: true, action: 'connection_sent' };
     }
-  }
 
-  if (followClicked) {
-    return { success: true, action: 'follow_clicked_unverified' };
-  }
-
-  return { success: false, error: 'No follow or connect button found' };
+    await actionLogger.log('follow_profile', 'follow_profile', 'error', 'No follow or connect button found', lead.id);
+    return { success: false, error: 'No follow or connect button found' };
+  });
 }

@@ -1,37 +1,67 @@
 import type { Page } from 'playwright';
-import { humanClick, humanType, findButtonByText } from '../helpers/humanBehavior';
-import { interpolateTemplate } from '../helpers/template';
+import type { ActionResult, CampaignStep, Lead } from '../../../types';
+import { LI, findFirst } from '../helpers/selectors';
+import { actionDelay, humanClick, humanType } from '../helpers/humanBehavior';
+import { withPopupGuard } from '../helpers/popupGuard';
+import { interpolate } from '../helpers/templateEngine';
+import { Logger } from '../../lib/logger';
 
-export async function sendMessage(page: Page, data: any, lead: any) {
-  const text = interpolateTemplate(data.messageTemplate || '', lead as Record<string, unknown>);
-  if (!text.trim()) throw new Error('Message template is empty');
+type SendMessageData = Partial<CampaignStep['config']> & {
+  messageTemplate?: string;
+  runId?: string;
+};
 
-  const messageBtn = await findButtonByText(page, 'Message');
-  if (!messageBtn) {
-    return { success: false, error: 'Message button not found - may not be connected' };
+const actionLogger = new Logger(process.env.ACTION_LOG_RUN_ID ?? 'runtime_send_message');
+
+export async function sendMessage(page: Page, data: SendMessageData, lead: Lead): Promise<ActionResult> {
+  const template = String(data.messageTemplate || '').trim();
+  const messageText = template ? interpolate(template, lead).trim() : '';
+
+  if (!messageText) {
+    return { success: false, error: 'Message template is empty' };
   }
 
-  await humanClick(messageBtn);
-  await page.waitForTimeout(1500 + Math.random() * 1000);
+  await actionLogger.log('send_message', 'send_message', 'running', 'Opening message composer', lead.id);
 
-  const composeBox = page
-    .locator('.msg-form__contenteditable, [contenteditable="true"][role="textbox"]')
-    .first();
+  return withPopupGuard(page, async () => {
+    const messageBtn = await findFirst(page, LI.messageBtn, 2500);
+    if (!messageBtn) {
+      await actionLogger.log(
+        'send_message',
+        'send_message',
+        'error',
+        'Message button not found. Lead may not be connected.',
+        lead.id
+      );
+      return { success: false, error: 'Message button not found - may not be connected' };
+    }
 
-  await composeBox.waitFor({ timeout: 5000 });
-  await composeBox.click();
-  await page.waitForTimeout(500);
+    await humanClick(page, messageBtn);
+    await actionDelay();
 
-  await humanType(page, composeBox, text);
-  await page.waitForTimeout(500 + Math.random() * 500);
+    const composeBox = await findFirst(page, LI.messageComposeBox, 5000);
+    if (!composeBox) {
+      await actionLogger.log('send_message', 'send_message', 'error', 'Message compose box not found', lead.id);
+      return { success: false, error: 'Message compose box not found' };
+    }
 
-  const sendBtn = page.locator('.msg-form__send-button, button[type="submit"]').first();
-  if (!(await sendBtn.isVisible().catch(() => false))) {
-    return { success: false, error: 'Send button not found' };
-  }
+    await humanType(page, composeBox, messageText);
+    await actionDelay();
 
-  await humanClick(sendBtn);
-  await page.waitForTimeout(1000);
+    const sendBtn = await findFirst(page, LI.messageSendBtn, 3000);
+    if (!sendBtn) {
+      await actionLogger.log('send_message', 'send_message', 'error', 'Send button not found', lead.id);
+      return { success: false, error: 'Send button not found' };
+    }
 
-  return { success: true, action: 'message_sent' };
+    await humanClick(page, sendBtn);
+    await actionDelay();
+
+    await actionLogger.log('send_message', 'send_message', 'success', 'Message sent', lead.id);
+    return {
+      success: true,
+      action: 'message_sent',
+      data: { messageLength: messageText.length },
+    };
+  });
 }

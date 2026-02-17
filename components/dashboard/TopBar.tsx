@@ -1,13 +1,16 @@
 'use client';
 
 import {
+  Briefcase,
   Bot,
   Bug,
   Cable,
   FileSpreadsheet,
+  Inbox,
   LayoutGrid,
   Settings,
   UserPlus,
+  Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProfileStore } from '@/store/profileStore';
@@ -18,6 +21,12 @@ const TABS = [
   { id: 'leads', label: 'Leads', icon: FileSpreadsheet },
   { id: 'logs', label: 'Execution', icon: Cable },
   { id: 'test', label: 'Node Lab', icon: Bug },
+] as const;
+
+const APP_LINKS = [
+  { href: '/campaigns', label: 'Campaigns', icon: Briefcase },
+  { href: '/leads/folders', label: 'Folders', icon: Users },
+  { href: '/unibox', label: 'Unibox', icon: Inbox },
 ] as const;
 
 interface TopBarProps {
@@ -74,6 +83,22 @@ export function TopBar({ activeTab, onTabChange }: TopBarProps) {
       </nav>
 
       <div className="flex items-center gap-4">
+        <div className="hidden items-center gap-1 md:flex">
+          {APP_LINKS.map((link) => {
+            const Icon = link.icon;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/70 transition hover:bg-white/10 hover:text-white"
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {link.label}
+              </Link>
+            );
+          })}
+        </div>
+
         {profiles.length > 0 ? (
           <select
             value={selectedProfile?.id ?? ''}

@@ -1,22 +1,41 @@
 import type { Page } from 'playwright';
+import type { ActionResult, Lead } from '../../../types';
+import { LI, findFirst } from '../helpers/selectors';
+import { withPopupGuard } from '../helpers/popupGuard';
+import { Logger } from '../../lib/logger';
 
-export async function checkConnection(page: Page, _lead: any) {
-  await page.waitForTimeout(500);
+const actionLogger = new Logger(process.env.ACTION_LOG_RUN_ID ?? 'runtime_check_connection');
 
-  const msgBtn = page.locator('button:has-text("Message")').first();
-  if (await msgBtn.isVisible().catch(() => false)) {
-    return { success: true, action: 'yes', data: { status: 'connected' } };
-  }
+export async function checkConnection(page: Page, lead: Lead): Promise<ActionResult> {
+  await actionLogger.log('check_connection', 'check_connection', 'running', 'Checking connection status', lead.id);
 
-  const followingBtn = page.locator('button:has-text("Following")').first();
-  if (await followingBtn.isVisible().catch(() => false)) {
-    return { success: true, action: 'yes', data: { status: 'following' } };
-  }
+  return withPopupGuard(page, async () => {
+    const messageBtn = await findFirst(page, LI.messageBtn, 1200);
+    if (messageBtn) {
+      await actionLogger.log('check_connection', 'check_connection', 'success', 'Connected (message available)', lead.id);
+      return { success: true, action: 'yes', data: { status: 'connected' } };
+    }
 
-  const pendingBtn = page.locator('button:has-text("Pending")').first();
-  if (await pendingBtn.isVisible().catch(() => false)) {
-    return { success: true, action: 'yes', data: { status: 'pending' } };
-  }
+    const followingBtn = await findFirst(page, LI.followingBtn, 1200);
+    if (followingBtn) {
+      await actionLogger.log('check_connection', 'check_connection', 'success', 'Following detected', lead.id);
+      return { success: true, action: 'yes', data: { status: 'following' } };
+    }
 
-  return { success: true, action: 'no', data: { status: 'not_connected' } };
+    const pendingBtn = await findFirst(page, LI.pendingBtn, 1200);
+    if (pendingBtn) {
+      await actionLogger.log('check_connection', 'check_connection', 'success', 'Connection pending', lead.id);
+      return { success: true, action: 'yes', data: { status: 'pending' } };
+    }
+
+    const degreeLoc = await findFirst(page, LI.profileConnectionDegree, 1000);
+    const degreeText = degreeLoc ? ((await degreeLoc.textContent()) || '').trim().toLowerCase() : '';
+    if (degreeText.includes('1st')) {
+      await actionLogger.log('check_connection', 'check_connection', 'success', '1st degree detected', lead.id);
+      return { success: true, action: 'yes', data: { status: 'connected', degree: degreeText } };
+    }
+
+    await actionLogger.log('check_connection', 'check_connection', 'success', 'Not connected', lead.id);
+    return { success: true, action: 'no', data: { status: 'not_connected', degree: degreeText } };
+  });
 }
