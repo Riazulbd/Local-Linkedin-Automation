@@ -10,10 +10,26 @@ export interface StartWorkflowRequest {
 }
 
 export interface TestNodeRequest {
-  nodeType: string;
-  nodeData: Record<string, unknown>;
-  linkedinUrl: string;
+  runId?: string;
+  action?: 'visit' | 'connect' | 'message' | 'follow';
+  nodeType?: string;
+  nodeData?: Record<string, unknown>;
+  linkedinUrl?: string;
+  testUrl?: string;
   linkedinProfileId?: string;
+  profileId?: string;
+  leadId?: string;
+  messageTemplate?: string;
+  lead?: {
+    id: string;
+    profile_id: string;
+    linkedin_url: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    company?: string | null;
+    title?: string | null;
+  };
+  isTest?: boolean;
 }
 
 export interface ProxyTestRequest {

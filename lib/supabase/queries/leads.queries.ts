@@ -1,6 +1,46 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Lead, CreateLeadInput, LeadStatus } from '@/types';
 
+interface LeadQueryFilters {
+  profileId?: string;
+  folderId?: string;
+  status?: LeadStatus;
+  limit?: number;
+}
+
+export async function getLeads(
+  supabase: SupabaseClient,
+  filters: LeadQueryFilters = {}
+): Promise<Lead[]> {
+  let query = supabase.from('leads').select('*');
+  if (filters.profileId) query = query.eq('profile_id', filters.profileId);
+  if (filters.folderId) query = query.eq('folder_id', filters.folderId);
+  if (filters.status) query = query.eq('status', filters.status);
+  if (typeof filters.limit === 'number' && Number.isFinite(filters.limit)) query = query.limit(filters.limit);
+
+  const { data, error } = await query.order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Lead[];
+}
+
+export async function getLeadById(
+  supabase: SupabaseClient,
+  leadId: string
+): Promise<Lead | null> {
+  const { data, error } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as Lead | null) ?? null;
+}
+
+export async function createLead(
+  supabase: SupabaseClient,
+  input: CreateLeadInput
+): Promise<Lead> {
+  const { data, error } = await supabase.from('leads').insert(input).select('*').single();
+  if (error) throw new Error(error.message);
+  return data as Lead;
+}
+
 export async function getLeadsByProfile(
   supabase: SupabaseClient,
   profileId: string,

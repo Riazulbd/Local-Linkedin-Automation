@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { LeadFolder } from '@/types';
+import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge';
+import type { Lead, LeadFolder } from '@/types';
 
 interface CreateFolderInput {
   name: string;
@@ -11,7 +12,10 @@ interface CreateFolderInput {
 
 export default function LeadsPage() {
   const [folders, setFolders] = useState<LeadFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
   const [color, setColor] = useState('#0077b5');
@@ -24,7 +28,12 @@ export default function LeadsPage() {
       const response = await fetch('/api/lead-folders', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to load lead folders');
-      setFolders(payload.folders ?? []);
+      const nextFolders = (payload.folders ?? []) as LeadFolder[];
+      setFolders(nextFolders);
+      setSelectedFolderId((current) => {
+        if (current && nextFolders.some((folder) => folder.id === current)) return current;
+        return nextFolders[0]?.id ?? null;
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load lead folders');
     } finally {
@@ -32,9 +41,53 @@ export default function LeadsPage() {
     }
   }
 
+  async function loadFolderLeads(folderId: string) {
+    setIsLoadingLeads(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/lead-folders/${folderId}/leads`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to load folder leads');
+      setLeads((payload.leads ?? []) as Lead[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load folder leads');
+      setLeads([]);
+    } finally {
+      setIsLoadingLeads(false);
+    }
+  }
+
+  async function loadAllLeads() {
+    setIsLoadingLeads(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/leads?limit=100', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to load leads');
+      setLeads((payload.leads ?? payload.data ?? []) as Lead[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load leads');
+      setLeads([]);
+    } finally {
+      setIsLoadingLeads(false);
+    }
+  }
+
   useEffect(() => {
     loadFolders().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!selectedFolderId) {
+      if (!folders.length) {
+        loadAllLeads().catch(() => undefined);
+      } else {
+        setLeads([]);
+      }
+      return;
+    }
+    loadFolderLeads(selectedFolderId).catch(() => undefined);
+  }, [selectedFolderId, folders.length]);
 
   async function createFolder(input: CreateFolderInput) {
     setIsCreating(true);
@@ -50,6 +103,9 @@ export default function LeadsPage() {
 
       setName('');
       await loadFolders();
+      if (payload.folder?.id) {
+        setSelectedFolderId(payload.folder.id);
+      }
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Failed to create folder');
     } finally {
@@ -63,6 +119,20 @@ export default function LeadsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Lead Folders</h1>
           <p className="text-sm text-slate-500">Organize your leads into folders and launch campaigns from them.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/leads/folders"
+            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 transition hover:bg-slate-100"
+          >
+            Manage Folders
+          </Link>
+          <Link
+            href="/leads/add-single"
+            className="rounded-md border border-cyan-400/40 px-3 py-2 text-xs text-cyan-200 transition hover:bg-cyan-500/20"
+          >
+            + Add Single Lead
+          </Link>
         </div>
       </div>
 
@@ -103,31 +173,102 @@ export default function LeadsPage() {
       {isLoading ? (
         <p className="text-sm text-slate-500">Loading folders...</p>
       ) : (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {folders.map((folder) => (
-            <Link
-              key={folder.id}
-              href={`/leads/${folder.id}`}
-              className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300"
-            >
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-900">{folder.name}</h3>
-                <span
-                  className="h-3 w-3 rounded-full border border-slate-300"
-                  style={{ backgroundColor: folder.color || '#0077b5' }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-slate-500">{folder.description || 'No description'}</p>
-              <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
-                <span>{folder.lead_count} leads</span>
-                <span>{new Date(folder.updated_at).toLocaleDateString()}</span>
-              </div>
-            </Link>
-          ))}
+        <section className="space-y-3">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {folders.map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                onClick={() => setSelectedFolderId(folder.id)}
+                className={`rounded-md border px-3 py-1.5 text-xs transition ${
+                  selectedFolderId === folder.id
+                    ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                {folder.name} ({folder.lead_count})
+              </button>
+            ))}
+          </div>
 
           {!folders.length && (
+            <div className="space-y-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6">
+              <p className="text-sm text-slate-600">No folders yet. Showing recent leads.</p>
+              <p className="text-xs text-slate-500">Create a folder above to organize and attach leads to campaigns.</p>
+            </div>
+          )}
+
+          {Boolean(folders.length) && !selectedFolderId && (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-              No folders yet. Create your first folder above.
+              Select a folder to view its leads.
+            </div>
+          )}
+
+          {(selectedFolderId || !folders.length) && (
+            <div className="space-y-2">
+              {selectedFolderId && (
+                <div className="flex items-center justify-end">
+                  <Link
+                    href={`/leads/${selectedFolderId}`}
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                  >
+                    Open Folder Detail
+                  </Link>
+                </div>
+              )}
+              <div className="overflow-auto rounded-xl border border-slate-200">
+                <table className="min-w-full text-left text-sm text-slate-700">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Company</th>
+                      <th className="px-3 py-2">Title</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Profile</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoadingLeads && (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
+                          Loading leads...
+                        </td>
+                      </tr>
+                    )}
+                    {!isLoadingLeads &&
+                      leads.map((lead) => (
+                        <tr key={lead.id} className="border-t border-slate-200">
+                          <td className="px-3 py-2">
+                            {`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '-'}
+                          </td>
+                          <td className="px-3 py-2">{lead.company || '-'}</td>
+                          <td className="px-3 py-2">{lead.title || '-'}</td>
+                          <td className="px-3 py-2">
+                            <LeadStatusBadge status={lead.status} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <a
+                              href={lead.linkedin_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-cyan-300 hover:underline"
+                            >
+                              View
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+
+                    {!isLoadingLeads && !leads.length && (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
+                          No leads in this folder.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </section>

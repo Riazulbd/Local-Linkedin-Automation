@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createLead, getLeads } from '@/lib/supabase/queries/leads.queries';
+import { refreshFolderLeadCount } from '@/lib/supabase/queries/folders.queries';
+import type { CreateLeadInput } from '@/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -10,18 +13,19 @@ export async function GET(req: Request) {
   try {
     const supabase = createServiceClient();
     const { searchParams } = new URL(req.url);
-    const profileId = searchParams.get('profileId');
+    const profileId = searchParams.get('profileId') || undefined;
+    const folderId = searchParams.get('folder_id') || undefined;
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam ? Number(limitParam) : undefined;
 
-    let query = supabase.from('leads').select('*');
-    if (profileId) query = query.eq('profile_id', profileId);
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    const leads = await getLeads(supabase, {
+      profileId,
+      folderId,
+      limit: Number.isFinite(limit as number) ? limit : undefined,
+    });
 
     return NextResponse.json(
-      { leads: data ?? [] },
+      { leads, data: leads },
       { headers: { 'Cache-Control': 'no-store, max-age=0' } }
     );
   } catch (error) {
@@ -34,38 +38,37 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-    if (!body.linkedin_url || typeof body.linkedin_url !== 'string') {
+    if (typeof body.linkedin_url !== 'string' || !body.linkedin_url.trim()) {
       return NextResponse.json({ error: 'linkedin_url is required' }, { status: 400 });
     }
 
-    if (!body.profile_id || typeof body.profile_id !== 'string') {
+    if (typeof body.profile_id !== 'string' || !body.profile_id.trim()) {
       return NextResponse.json({ error: 'profile_id is required' }, { status: 400 });
     }
 
     const supabase = createServiceClient();
-    const insert: Record<string, unknown> = {
-      profile_id: body.profile_id,
+    const input: CreateLeadInput = {
+      profile_id: body.profile_id.trim(),
       linkedin_url: body.linkedin_url.trim(),
-      first_name: body.first_name || '',
-      last_name: body.last_name || '',
-      company: body.company || '',
-      title: body.title || '',
-      extra_data: body.extra_data || {},
+      first_name: typeof body.first_name === 'string' && body.first_name.trim() ? body.first_name.trim() : undefined,
+      last_name: typeof body.last_name === 'string' && body.last_name.trim() ? body.last_name.trim() : undefined,
+      company: typeof body.company === 'string' && body.company.trim() ? body.company.trim() : undefined,
+      title: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : undefined,
+      folder_id: typeof body.folder_id === 'string' && body.folder_id.trim() ? body.folder_id.trim() : undefined,
+      notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : undefined,
+      extra_data:
+        body.extra_data && typeof body.extra_data === 'object'
+          ? (body.extra_data as Record<string, string>)
+          : {},
     };
-
-    const { data, error } = await supabase
-      .from('leads')
-      .insert(insert)
-      .select('*')
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const lead = await createLead(supabase, input);
+    if (lead.folder_id) {
+      await refreshFolderLeadCount(supabase, lead.folder_id).catch(() => undefined);
     }
 
-    return NextResponse.json({ lead: data }, { status: 201 });
+    return NextResponse.json({ lead, data: lead }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to create lead' },
