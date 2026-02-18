@@ -1,20 +1,13 @@
 import { AppProviders } from '@/components/providers/AppProviders';
-import { AppShell } from '@/components/shell/AppShell';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { appMono, appSans } from '@/app/fonts';
+import { darkTheme } from '@/lib/theme';
+import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
+import CssBaseline from '@mui/material/CssBaseline';
+import { ThemeProvider } from '@mui/material/styles';
 import type { Metadata } from 'next';
-import { IBM_Plex_Mono, Space_Grotesk } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  variable: '--font-sans',
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  weight: ['400', '500', '600'],
-  subsets: ['latin'],
-  variable: '--font-mono',
-});
 
 export const metadata: Metadata = {
   title: 'LinkedIn Automator',
@@ -23,11 +16,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${ibmPlexMono.variable}`}>
-      <body className="bg-bg-base font-sans text-text-primary antialiased">
-        <AppProviders>
-          <AppShell>{children}</AppShell>
-        </AppProviders>
+    <html lang="en">
+      <body className={`${appSans.variable} ${appMono.variable}`}>
+        <AppRouterCacheProvider>
+          <ThemeProvider theme={darkTheme}>
+            <CssBaseline />
+            <AppProviders>
+              <DashboardLayout>{children}</DashboardLayout>
+            </AppProviders>
+          </ThemeProvider>
+        </AppRouterCacheProvider>
       </body>
     </html>
   );

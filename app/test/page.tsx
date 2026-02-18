@@ -1,191 +1,250 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Snackbar,
+  Stack,
+  Typography,
+} from '@mui/material';
+import { PlayArrow, Stop } from '@mui/icons-material';
 import { LiveLogStream } from '@/components/logs/LiveLogStream';
-import { useProfileStore } from '@/store/profileStore';
+import { createClient } from '@/lib/supabase/client';
 import type { Lead } from '@/types';
+
+interface ProfileOption {
+  id: string;
+  name: string;
+  adspower_profile_id: string | null;
+}
 
 type TestAction = 'visit' | 'connect' | 'message' | 'follow';
 
-export default function TestPage() {
-  const profiles = useProfileStore((state) => state.profiles);
-  const selectedProfile = useProfileStore((state) => state.selectedProfile);
-  const selectProfileById = useProfileStore((state) => state.selectProfileById);
-
+export default function TestLabPage() {
+  const supabase = createClient();
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const [selectedLead, setSelectedLead] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState('');
   const [runId, setRunId] = useState<string | null>(null);
-  const [runningAction, setRunningAction] = useState<TestAction | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const profileId = useMemo(() => selectedProfile?.id || '', [selectedProfile?.id]);
-  const selectedLead = useMemo(
-    () => leads.find((lead) => lead.id === selectedLeadId) ?? null,
-    [leads, selectedLeadId]
-  );
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState('');
+  const [showWarn, setShowWarn] = useState(false);
 
   useEffect(() => {
-    if (!profileId) {
-      setLeads([]);
-      setSelectedLeadId('');
+    let mounted = true;
+
+    const loadData = async () => {
+      const [leadsRes, profilesRes] = await Promise.all([
+        supabase
+          .from('leads')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('linkedin_profiles')
+          .select('id, name, adspower_profile_id')
+          .order('created_at', { ascending: true }),
+      ]);
+
+      if (!mounted) return;
+      setLeads((leadsRes.data ?? []) as Lead[]);
+      setProfiles((profilesRes.data ?? []) as ProfileOption[]);
+    };
+
+    void loadData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
+  const selectedLeadData = useMemo(
+    () => leads.find((lead) => lead.id === selectedLead) ?? null,
+    [leads, selectedLead]
+  );
+  const selectedProfileData = useMemo(
+    () => profiles.find((profile) => profile.id === selectedProfile) ?? null,
+    [profiles, selectedProfile]
+  );
+
+  const runTest = async (action: TestAction) => {
+    if (!selectedLead || !selectedProfile) {
+      setShowWarn(true);
       return;
     }
 
-    fetch(`/api/leads?profileId=${encodeURIComponent(profileId)}&limit=50`, { cache: 'no-store' })
-      .then((response) => response.json().catch(() => ({})))
-      .then((payload) => {
-        const nextLeads = (payload.leads ?? payload.data ?? []) as Lead[];
-        setLeads(nextLeads);
-        setSelectedLeadId((current) => {
-          if (current && nextLeads.some((lead) => lead.id === current)) return current;
-          return nextLeads[0]?.id ?? '';
-        });
-      })
-      .catch(() => {
-        setLeads([]);
-        setSelectedLeadId('');
-      });
-  }, [profileId]);
-
-  async function runTest(action: TestAction) {
-    if (!profileId) {
-      setError('Please select a profile');
-      return;
-    }
-
-    if (!selectedLead?.id) {
-      setError('Please select a lead');
-      return;
-    }
-
-    setError(null);
-    setRunningAction(action);
-
+    setError('');
+    setTesting(true);
     try {
       const response = await fetch('/api/automation/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
-          profileId,
-          leadId: selectedLead.id,
-          nodeType:
-            action === 'visit'
-              ? 'visit_profile'
-              : action === 'connect'
-                ? 'send_connection'
-                : action === 'message'
-                  ? 'send_message'
-                  : 'follow_profile',
-          nodeData:
-            action === 'message'
-              ? { messageTemplate: 'Hi {{firstName}}, this is a test message.' }
-              : {},
-          messageTemplate: action === 'message' ? 'Hi {{firstName}}, this is a test message.' : undefined,
+          profileId: selectedProfile,
+          leadId: selectedLead,
+          messageTemplate: 'Hi {{firstName}}, this is a test message from the automation lab!',
         }),
       });
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || 'Failed to start test');
+        throw new Error((payload.error as string) || 'Failed to run test');
       }
 
-      setRunId(payload.runId || null);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to run test');
+      setRunId((payload.runId as string) ?? null);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : 'Failed to run test');
     } finally {
-      setRunningAction(null);
+      setTesting(false);
     }
-  }
+  };
 
   return (
-    <div className="space-y-4 p-6" data-animate="page">
-      <h1 className="text-xl font-semibold text-text-primary">Automation Test Mode</h1>
+    <Box sx={{ p: 4 }} data-animate="page">
+      <Typography variant="h4" fontWeight={600} mb={1}>
+        Test Lab
+      </Typography>
+      <Typography variant="body2" color="text.secondary" mb={4}>
+        Test individual actions on real LinkedIn profiles safely
+      </Typography>
 
-      <div className="grid gap-3 rounded-xl border border-border bg-bg-surface p-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
-          Profile
-          <select
-            value={profileId}
-            onChange={(event) => selectProfileById(event.target.value || null)}
-            className="rounded-md border border-border bg-bg-base px-2.5 py-2 text-sm text-text-primary outline-none focus:border-accent"
-          >
-            <option value="">Select profile</option>
-            {profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      <Stack spacing={3}>
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" fontWeight={600} mb={3} color="primary.main">
+            1. Select LinkedIn Profile (AdsPower)
+          </Typography>
+          <FormControl fullWidth>
+            <InputLabel>LinkedIn Profile</InputLabel>
+            <Select
+              value={selectedProfile}
+              onChange={(event) => setSelectedProfile(String(event.target.value))}
+              label="LinkedIn Profile"
+            >
+              <MenuItem value="">-- Select profile --</MenuItem>
+              {profiles.map((profile) => (
+                <MenuItem key={profile.id} value={profile.id}>
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Chip label={profile.name} color="primary" size="small" />
+                    <Typography variant="caption" color="text.secondary">
+                      AdsPower: {profile.adspower_profile_id ?? 'N/A'}
+                    </Typography>
+                  </Stack>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
-          Lead
-          <select
-            value={selectedLeadId}
-            onChange={(event) => setSelectedLeadId(event.target.value)}
-            className="rounded-md border border-border bg-bg-base px-2.5 py-2 text-sm text-text-primary outline-none focus:border-accent"
-          >
-            <option value="">Select lead</option>
-            {leads.map((lead) => (
-              <option key={lead.id} value={lead.id}>
-                {`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unnamed lead'} -{' '}
-                {lead.company || 'No company'}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+          {selectedProfileData && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Using profile: <strong>{selectedProfileData.name}</strong> (AdsPower ID:{' '}
+              {selectedProfileData.adspower_profile_id ?? 'N/A'})
+            </Alert>
+          )}
+        </Paper>
 
-      {selectedLead && (
-        <div className="rounded-md border border-border bg-bg-surface px-3 py-2 text-xs text-text-muted">
-          Target URL:{' '}
-          <a href={selectedLead.linkedin_url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
-            {selectedLead.linkedin_url}
-          </a>
-        </div>
-      )}
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" fontWeight={600} mb={3} color="success.main">
+            2. Select Target Lead
+          </Typography>
+          <FormControl fullWidth>
+            <InputLabel>Lead</InputLabel>
+            <Select value={selectedLead} onChange={(event) => setSelectedLead(String(event.target.value))} label="Lead">
+              <MenuItem value="">-- Select lead --</MenuItem>
+              {leads.map((lead) => (
+                <MenuItem key={lead.id} value={lead.id}>
+                  {`${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || 'Unnamed'} ({lead.company || 'No company'})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-      {error && (
-        <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>
-      )}
+          {selectedLeadData && (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              Target: <strong>{`${selectedLeadData.first_name ?? ''} ${selectedLeadData.last_name ?? ''}`.trim() || 'Unnamed'}</strong>
+              <br />
+              <a href={selectedLeadData.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>
+                {selectedLeadData.linkedin_url}
+              </a>
+            </Alert>
+          )}
+        </Paper>
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => runTest('visit')}
-          disabled={Boolean(runningAction) || !selectedLead}
-          className="rounded-lg border border-border bg-bg-panel px-4 py-2 text-xs font-medium text-text-primary hover:border-accent disabled:opacity-60"
-        >
-          {runningAction === 'visit' ? 'Running Visit...' : 'Test Visit'}
-        </button>
-        <button
-          type="button"
-          onClick={() => runTest('connect')}
-          disabled={Boolean(runningAction) || !selectedLead}
-          className="rounded-lg border border-border bg-bg-panel px-4 py-2 text-xs font-medium text-text-primary hover:border-accent disabled:opacity-60"
-        >
-          {runningAction === 'connect' ? 'Running Connect...' : 'Test Connect'}
-        </button>
-        <button
-          type="button"
-          onClick={() => runTest('message')}
-          disabled={Boolean(runningAction) || !selectedLead}
-          className="rounded-lg border border-border bg-bg-panel px-4 py-2 text-xs font-medium text-text-primary hover:border-accent disabled:opacity-60"
-        >
-          {runningAction === 'message' ? 'Running Message...' : 'Test Message'}
-        </button>
-        <button
-          type="button"
-          onClick={() => runTest('follow')}
-          disabled={Boolean(runningAction) || !selectedLead}
-          className="rounded-lg border border-border bg-bg-panel px-4 py-2 text-xs font-medium text-text-primary hover:border-accent disabled:opacity-60"
-        >
-          {runningAction === 'follow' ? 'Running Follow...' : 'Test Follow'}
-        </button>
-      </div>
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" fontWeight={600} mb={3} color="warning.main">
+            3. Run Test Action
+          </Typography>
+          <Stack direction="row" spacing={2} flexWrap="wrap">
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={testing ? <Stop /> : <PlayArrow />}
+              onClick={() => runTest('visit')}
+              disabled={!selectedLead || !selectedProfile || testing}
+              size="large"
+            >
+              Visit Profile
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<PlayArrow />}
+              onClick={() => runTest('connect')}
+              disabled={!selectedLead || !selectedProfile || testing}
+              size="large"
+            >
+              Send Connection
+            </Button>
+            <Button
+              variant="contained"
+              color="info"
+              startIcon={<PlayArrow />}
+              onClick={() => runTest('message')}
+              disabled={!selectedLead || !selectedProfile || testing}
+              size="large"
+            >
+              Send Message
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<PlayArrow />}
+              onClick={() => runTest('follow')}
+              disabled={!selectedLead || !selectedProfile || testing}
+              size="large"
+            >
+              Follow Profile
+            </Button>
+          </Stack>
+        </Paper>
 
-      {runId && <LiveLogStream runId={runId} />}
-    </div>
+        {error && <Alert severity="error">{error}</Alert>}
+
+        {runId && (
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" fontWeight={600} mb={2} color="error.main">
+              Live Execution Logs
+            </Typography>
+            <LiveLogStream runId={runId} />
+          </Paper>
+        )}
+      </Stack>
+
+      <Snackbar open={showWarn} autoHideDuration={2500} onClose={() => setShowWarn(false)}>
+        <Alert severity="warning" variant="filled" onClose={() => setShowWarn(false)} sx={{ width: '100%' }}>
+          Please select both a lead and a LinkedIn profile
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 }

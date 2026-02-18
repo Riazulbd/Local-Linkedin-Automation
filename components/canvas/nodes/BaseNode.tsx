@@ -2,7 +2,6 @@
 
 import { Handle, Position } from 'reactflow';
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
 import type { NodeExecutionStatus } from '@/store/workflowStore';
 
 interface BaseNodeProps {
@@ -16,11 +15,11 @@ interface BaseNodeProps {
   children?: ReactNode;
 }
 
-const STATUS_CLASS: Record<NodeExecutionStatus, string> = {
-  running: 'ring-2 ring-blue-400 animate-pulse',
-  success: 'ring-2 ring-green-400',
-  error: 'ring-2 ring-red-400',
-  skipped: 'ring-2 ring-yellow-400',
+const STATUS_BORDER: Record<NodeExecutionStatus, string> = {
+  running: '#60a5fa',
+  success: '#34d399',
+  error: '#f87171',
+  skipped: '#fbbf24',
 };
 
 export function BaseNode({
@@ -35,17 +34,27 @@ export function BaseNode({
 }: BaseNodeProps) {
   return (
     <div
-      className={cn(
-        'w-56 rounded-xl border border-border bg-bg-surface px-3 py-2 shadow-md transition-all',
-        status ? STATUS_CLASS[status] : 'ring-0',
-        highlighted && 'outline outline-2 outline-accent outline-offset-2'
-      )}
+      style={{
+        width: 236,
+        borderRadius: 12,
+        border: `1px solid ${status ? STATUS_BORDER[status] : '#475569'}`,
+        background: '#1e293b',
+        color: '#f1f5f9',
+        boxShadow: highlighted ? '0 0 0 2px #818cf8' : '0 8px 16px rgba(2,6,23,0.28)',
+        padding: '10px 12px',
+        transition: 'all 0.2s ease',
+      }}
     >
       {showTarget && (
         <Handle
           type="target"
           position={Position.Left}
-          className="!h-2.5 !w-2.5 !border !border-bg-surface !bg-accent"
+          style={{
+            width: 10,
+            height: 10,
+            border: '1px solid #1e293b',
+            background: '#6366f1',
+          }}
         />
       )}
 
@@ -53,15 +62,20 @@ export function BaseNode({
         <Handle
           type="source"
           position={Position.Right}
-          className="!h-2.5 !w-2.5 !border !border-bg-surface !bg-accent"
+          style={{
+            width: 10,
+            height: 10,
+            border: '1px solid #1e293b',
+            background: '#6366f1',
+          }}
         />
       )}
 
-      <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
-        <span className="text-accent">{icon}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700 }}>
+        <span style={{ color: '#a5b4fc', display: 'inline-flex' }}>{icon}</span>
         <span>{title}</span>
       </div>
-      <p className="mt-1 text-[11px] leading-4 text-text-muted">{description}</p>
+      <p style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: '#94a3b8' }}>{description}</p>
       {children}
     </div>
   );

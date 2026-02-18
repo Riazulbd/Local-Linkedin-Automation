@@ -3,10 +3,19 @@ import { LoginManager } from './LoginManager';
 import { navigationDelay } from './helpers/humanBehavior';
 import { logger } from '../logger';
 
+interface SessionHealOptions {
+  twoFactorTimeoutMs?: number;
+}
+
 export class SessionHealer {
   private loginManager = new LoginManager();
 
-  async healSession(profileId: string, adspowerProfileId: string, page: Page): Promise<boolean> {
+  async healSession(
+    profileId: string,
+    adspowerProfileId: string,
+    page: Page,
+    options: SessionHealOptions = {}
+  ): Promise<boolean> {
     logger.info('Checking LinkedIn session health', { profileId, adspowerProfileId });
 
     try {
@@ -29,7 +38,9 @@ export class SessionHealer {
     }
 
     if (url.includes('/login') || url.includes('/authwall') || url.includes('/uas/login')) {
-      const result = await this.loginManager.loginProfile(profileId, adspowerProfileId, page);
+      const result = await this.loginManager.loginProfile(profileId, adspowerProfileId, page, {
+        twoFactorTimeoutMs: options.twoFactorTimeoutMs,
+      });
       return result === 'success' || result === 'already_logged_in';
     }
 

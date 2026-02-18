@@ -14,7 +14,7 @@ export function SendMessageNode({ data }: NodeProps<SendMessageNodeData>) {
   return (
     <BaseNode
       title="Send Message"
-      icon={<MessageSquare className="h-3.5 w-3.5" />}
+      icon={<MessageSquare size={14} />}
       description={data.messageTemplate ? 'Template configured' : 'No template set'}
       status={data.status}
       highlighted={data.highlighted}

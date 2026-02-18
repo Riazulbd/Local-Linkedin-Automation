@@ -1,278 +1,458 @@
 'use client';
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge';
-import type { Lead, LeadFolder } from '@/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  IconButton,
+  InputLabel,
+  Link as MuiLink,
+  MenuItem,
+  Paper,
+  Select,
+  Snackbar,
+  Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { Add, Delete, Edit, Folder } from '@mui/icons-material';
+import { StatusChip } from '@/components/ui/StatusChip';
+import type { Lead, LeadFolder, LeadStatus } from '@/types';
 
-interface CreateFolderInput {
-  name: string;
-  color: string;
+interface LeadsPayload {
+  leads?: Lead[];
+  data?: Lead[];
+  error?: string;
 }
 
-export default function LeadsPage() {
-  const [folders, setFolders] = useState<LeadFolder[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [color, setColor] = useState('#0077b5');
-  const [error, setError] = useState<string | null>(null);
+interface FoldersPayload {
+  folders?: LeadFolder[];
+  error?: string;
+}
 
-  async function loadFolders() {
-    setIsLoading(true);
-    setError(null);
+interface LeadDraft {
+  linkedin_url: string;
+  first_name: string;
+  last_name: string;
+  company: string;
+  title: string;
+  status: LeadStatus;
+  folder_id: string;
+}
+
+const STATUS_OPTIONS: LeadStatus[] = ['pending', 'running', 'completed', 'failed', 'skipped'];
+
+export default function LeadsPage() {
+  const router = useRouter();
+  const [folders, setFolders] = useState<LeadFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('all');
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(true);
+  const [loadingLeads, setLoadingLeads] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [editDraft, setEditDraft] = useState<LeadDraft | null>(null);
+  const [savingLead, setSavingLead] = useState(false);
+  const [deletingLead, setDeletingLead] = useState<Lead | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  const loadFolders = useCallback(async () => {
+    setLoadingFolders(true);
     try {
       const response = await fetch('/api/lead-folders', { cache: 'no-store' });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to load lead folders');
-      const nextFolders = (payload.folders ?? []) as LeadFolder[];
+      const payload = (await response.json().catch(() => ({}))) as FoldersPayload;
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load folders');
+      }
+
+      const nextFolders = payload.folders ?? [];
       setFolders(nextFolders);
       setSelectedFolderId((current) => {
-        if (current && nextFolders.some((folder) => folder.id === current)) return current;
-        return nextFolders[0]?.id ?? null;
+        if (current === 'all') return 'all';
+        return nextFolders.some((folder) => folder.id === current) ? current : 'all';
       });
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load lead folders');
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load folders');
+      setFolders([]);
     } finally {
-      setIsLoading(false);
+      setLoadingFolders(false);
     }
-  }
+  }, []);
 
-  async function loadFolderLeads(folderId: string) {
-    setIsLoadingLeads(true);
+  const loadLeads = useCallback(async (folderId: string) => {
+    setLoadingLeads(true);
     setError(null);
-    try {
-      const response = await fetch(`/api/lead-folders/${folderId}/leads`, { cache: 'no-store' });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to load folder leads');
-      setLeads((payload.leads ?? []) as Lead[]);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load folder leads');
-      setLeads([]);
-    } finally {
-      setIsLoadingLeads(false);
-    }
-  }
 
-  async function loadAllLeads() {
-    setIsLoadingLeads(true);
-    setError(null);
+    const endpoint =
+      folderId === 'all'
+        ? '/api/leads?limit=300'
+        : `/api/lead-folders/${encodeURIComponent(folderId)}/leads`;
+
     try {
-      const response = await fetch('/api/leads?limit=100', { cache: 'no-store' });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to load leads');
+      const response = await fetch(endpoint, { cache: 'no-store' });
+      const payload = (await response.json().catch(() => ({}))) as LeadsPayload;
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load leads');
+      }
       setLeads((payload.leads ?? payload.data ?? []) as Lead[]);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load leads');
       setLeads([]);
     } finally {
-      setIsLoadingLeads(false);
+      setLoadingLeads(false);
     }
-  }
-
-  useEffect(() => {
-    loadFolders().catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    if (!selectedFolderId) {
-      if (!folders.length) {
-        loadAllLeads().catch(() => undefined);
-      } else {
-        setLeads([]);
-      }
+    void loadFolders();
+  }, [loadFolders]);
+
+  useEffect(() => {
+    void loadLeads(selectedFolderId);
+  }, [loadLeads, selectedFolderId]);
+
+  const activeFolder = useMemo(
+    () => folders.find((folder) => folder.id === selectedFolderId) ?? null,
+    [folders, selectedFolderId]
+  );
+
+  const openEditDialog = (lead: Lead) => {
+    setEditingLead(lead);
+    setEditDraft({
+      linkedin_url: lead.linkedin_url,
+      first_name: lead.first_name ?? '',
+      last_name: lead.last_name ?? '',
+      company: lead.company ?? '',
+      title: lead.title ?? '',
+      status: lead.status,
+      folder_id: lead.folder_id ?? '',
+    });
+  };
+
+  const closeEditDialog = () => {
+    setEditingLead(null);
+    setEditDraft(null);
+    setSavingLead(false);
+  };
+
+  const saveLeadChanges = async () => {
+    if (!editingLead || !editDraft) return;
+
+    if (!editDraft.linkedin_url.trim()) {
+      setError('LinkedIn URL is required.');
       return;
     }
-    loadFolderLeads(selectedFolderId).catch(() => undefined);
-  }, [selectedFolderId, folders.length]);
 
-  async function createFolder(input: CreateFolderInput) {
-    setIsCreating(true);
+    setSavingLead(true);
     setError(null);
     try {
-      const response = await fetch('/api/lead-folders', {
-        method: 'POST',
+      const response = await fetch(`/api/leads/${editingLead.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          linkedin_url: editDraft.linkedin_url.trim(),
+          first_name: editDraft.first_name.trim() || null,
+          last_name: editDraft.last_name.trim() || null,
+          company: editDraft.company.trim() || null,
+          title: editDraft.title.trim() || null,
+          status: editDraft.status,
+          folder_id: editDraft.folder_id || null,
+        }),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to create folder');
 
-      setName('');
-      await loadFolders();
-      if (payload.folder?.id) {
-        setSelectedFolderId(payload.folder.id);
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to update lead');
       }
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Failed to create folder');
-    } finally {
-      setIsCreating(false);
+
+      setToastMessage('Lead updated');
+      closeEditDialog();
+      await Promise.all([loadLeads(selectedFolderId), loadFolders()]);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to update lead');
+      setSavingLead(false);
     }
-  }
+  };
+
+  const deleteSelectedLead = async () => {
+    if (!deletingLead) return;
+    setDeleting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/leads/${deletingLead.id}`, {
+        method: 'DELETE',
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to delete lead');
+      }
+
+      setDeletingLead(null);
+      setToastMessage('Lead deleted');
+      await Promise.all([loadLeads(selectedFolderId), loadFolders()]);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete lead');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Lead Folders</h1>
-          <p className="text-sm text-slate-500">Organize your leads into folders and launch campaigns from them.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/leads/folders"
-            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 transition hover:bg-slate-100"
-          >
+    <Box sx={{ p: 4 }} data-animate="page">
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={4} spacing={2}>
+        <Box>
+          <Typography variant="h4" fontWeight={600}>
+            Leads
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {activeFolder ? `Folder: ${activeFolder.name}` : 'All leads'} ({leads.length})
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={2}>
+          <Button variant="outlined" startIcon={<Folder />} onClick={() => router.push('/leads/folders')}>
             Manage Folders
-          </Link>
-          <Link
-            href="/leads/add-single"
-            className="rounded-md border border-cyan-400/40 px-3 py-2 text-xs text-cyan-200 transition hover:bg-cyan-500/20"
-          >
-            + Add Single Lead
-          </Link>
-        </div>
-      </div>
+          </Button>
+          <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/leads/add-single')}>
+            Add Lead
+          </Button>
+        </Stack>
+      </Stack>
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!name.trim()) return;
-          createFolder({ name: name.trim(), color }).catch(() => undefined);
-        }}
-        className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-      >
-        <h2 className="text-sm font-semibold text-slate-900">Create Folder</h2>
-        <div className="mt-3 grid gap-3 md:grid-cols-[1fr_160px_auto]">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Folder name"
-            className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-          />
-          <input
-            value={color}
-            onChange={(event) => setColor(event.target.value)}
-            type="color"
-            className="h-10 rounded-md border border-slate-200 bg-slate-50 px-2"
-          />
-          <button
-            type="submit"
-            disabled={isCreating || !name.trim()}
-            className="rounded-md border border-cyan-400/40 px-3 py-2 text-sm text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
-          >
-            {isCreating ? 'Creating...' : 'Create'}
-          </button>
-        </div>
-      </form>
-
-      {error && <p className="text-sm text-rose-300">{error}</p>}
-
-      {isLoading ? (
-        <p className="text-sm text-slate-500">Loading folders...</p>
-      ) : (
-        <section className="space-y-3">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {folders.map((folder) => (
-              <button
-                key={folder.id}
-                type="button"
-                onClick={() => setSelectedFolderId(folder.id)}
-                className={`rounded-md border px-3 py-1.5 text-xs transition ${
-                  selectedFolderId === folder.id
-                    ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100'
-                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {folder.name} ({folder.lead_count})
-              </button>
-            ))}
-          </div>
-
-          {!folders.length && (
-            <div className="space-y-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6">
-              <p className="text-sm text-slate-600">No folders yet. Showing recent leads.</p>
-              <p className="text-xs text-slate-500">Create a folder above to organize and attach leads to campaigns.</p>
-            </div>
-          )}
-
-          {Boolean(folders.length) && !selectedFolderId && (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-              Select a folder to view its leads.
-            </div>
-          )}
-
-          {(selectedFolderId || !folders.length) && (
-            <div className="space-y-2">
-              {selectedFolderId && (
-                <div className="flex items-center justify-end">
-                  <Link
-                    href={`/leads/${selectedFolderId}`}
-                    className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
-                  >
-                    Open Folder Detail
-                  </Link>
-                </div>
-              )}
-              <div className="overflow-auto rounded-xl border border-slate-200">
-                <table className="min-w-full text-left text-sm text-slate-700">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Company</th>
-                      <th className="px-3 py-2">Title</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Profile</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {isLoadingLeads && (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
-                          Loading leads...
-                        </td>
-                      </tr>
-                    )}
-                    {!isLoadingLeads &&
-                      leads.map((lead) => (
-                        <tr key={lead.id} className="border-t border-slate-200">
-                          <td className="px-3 py-2">
-                            {`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '-'}
-                          </td>
-                          <td className="px-3 py-2">{lead.company || '-'}</td>
-                          <td className="px-3 py-2">{lead.title || '-'}</td>
-                          <td className="px-3 py-2">
-                            <LeadStatusBadge status={lead.status} />
-                          </td>
-                          <td className="px-3 py-2">
-                            <a
-                              href={lead.linkedin_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-cyan-300 hover:underline"
-                            >
-                              View
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
-
-                    {!isLoadingLeads && !leads.length && (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
-                          No leads in this folder.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </section>
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
       )}
-    </main>
+
+      <Paper sx={{ mb: 3 }}>
+        <Tabs
+          value={selectedFolderId}
+          onChange={(_, value) => setSelectedFolderId(String(value))}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab value="all" label="All Leads" />
+          {folders.map((folder) => (
+            <Tab
+              key={folder.id}
+              value={folder.id}
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <span>{folder.name}</span>
+                  <Chip label={folder.lead_count} size="small" />
+                </Stack>
+              }
+            />
+          ))}
+        </Tabs>
+      </Paper>
+
+      {loadingFolders || loadingLeads ? (
+        <Paper sx={{ p: 6, textAlign: 'center' }}>
+          <CircularProgress size={26} />
+          <Typography variant="body2" color="text.secondary" mt={2}>
+            Loading leads...
+          </Typography>
+        </Paper>
+      ) : leads.length === 0 ? (
+        <Paper sx={{ textAlign: 'center', py: 8 }}>
+          <Typography color="text.secondary" mb={2}>
+            No leads found for this view.
+          </Typography>
+          <Button variant="contained" onClick={() => router.push('/leads/add-single')}>
+            Add Lead
+          </Button>
+        </Paper>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Company</TableCell>
+                <TableCell>Title</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Folder</TableCell>
+                <TableCell>LinkedIn</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {leads.map((lead) => (
+                <TableRow key={lead.id} hover>
+                  <TableCell>{`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '—'}</TableCell>
+                  <TableCell>{lead.company || '—'}</TableCell>
+                  <TableCell>{lead.title || '—'}</TableCell>
+                  <TableCell>
+                    <StatusChip status={lead.status} />
+                  </TableCell>
+                  <TableCell>
+                    {folders.find((folder) => folder.id === lead.folder_id)?.name || <Typography variant="caption">Unassigned</Typography>}
+                  </TableCell>
+                  <TableCell>
+                    <MuiLink href={lead.linkedin_url} target="_blank" rel="noopener">
+                      View
+                    </MuiLink>
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton size="small" color="primary" onClick={() => openEditDialog(lead)}>
+                      <Edit fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={() => setDeletingLead(lead)}>
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      <Dialog open={Boolean(editingLead && editDraft)} onClose={closeEditDialog} fullWidth maxWidth="sm">
+        <DialogTitle>Edit Lead</DialogTitle>
+        <DialogContent>
+          {editDraft && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <TextField
+                label="LinkedIn URL"
+                value={editDraft.linkedin_url}
+                onChange={(event) =>
+                  setEditDraft((prev) => (prev ? { ...prev, linkedin_url: event.target.value } : prev))
+                }
+                fullWidth
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="First Name"
+                  value={editDraft.first_name}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, first_name: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="Last Name"
+                  value={editDraft.last_name}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, last_name: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="Company"
+                  value={editDraft.company}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, company: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="Title"
+                  value={editDraft.title}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, title: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={editDraft.status}
+                    label="Status"
+                    onChange={(event) =>
+                      setEditDraft((prev) =>
+                        prev ? { ...prev, status: event.target.value as LeadStatus } : prev
+                      )
+                    }
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <MenuItem key={status} value={status}>
+                        {status}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>Folder</InputLabel>
+                  <Select
+                    value={editDraft.folder_id}
+                    label="Folder"
+                    onChange={(event) =>
+                      setEditDraft((prev) => (prev ? { ...prev, folder_id: String(event.target.value) } : prev))
+                    }
+                  >
+                    <MenuItem value="">Unassigned</MenuItem>
+                    {folders.map((folder) => (
+                      <MenuItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEditDialog}>Cancel</Button>
+          <Button variant="contained" onClick={() => saveLeadChanges().catch(() => undefined)} disabled={savingLead}>
+            {savingLead ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingLead)} onClose={() => setDeletingLead(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete Lead</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will permanently remove{' '}
+            <strong>{`${deletingLead?.first_name || ''} ${deletingLead?.last_name || ''}`.trim() || 'this lead'}</strong>.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeletingLead(null)} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => deleteSelectedLead().catch(() => undefined)}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={Boolean(toastMessage)} autoHideDuration={2200} onClose={() => setToastMessage('')}>
+        <Alert onClose={() => setToastMessage('')} severity="success" variant="filled" sx={{ width: '100%' }}>
+          {toastMessage}
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 }

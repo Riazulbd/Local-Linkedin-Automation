@@ -1,6 +1,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material';
 import type { CSVLeadRow, ColumnMapping } from '@/types';
 
 const FIELD_OPTIONS: Array<ColumnMapping['field']> = [
@@ -39,46 +53,57 @@ export function CSVImportMapper({ rows, onChange }: CSVImportMapperProps) {
 
   if (!headers.length) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-        No CSV preview rows yet.
-      </div>
+      <Paper variant="outlined" sx={{ p: 3 }}>
+        <Typography variant="body2" color="text.secondary">
+          No CSV preview rows yet.
+        </Typography>
+      </Paper>
     );
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <h3 className="text-sm font-semibold text-slate-900">CSV Column Mapper</h3>
-      <div className="mt-2 overflow-auto rounded-md border border-slate-200">
-        <table className="min-w-full text-left text-xs text-slate-600">
-          <thead className="bg-slate-50 text-slate-400">
-            <tr>
-              <th className="px-3 py-2">CSV Header</th>
-              <th className="px-3 py-2">Map To</th>
-            </tr>
-          </thead>
-          <tbody>
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
+        CSV Column Mapper
+      </Typography>
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>CSV Header</TableCell>
+              <TableCell>Map To</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {headers.map((header) => (
-              <tr key={header} className="border-t border-slate-200">
-                <td className="px-3 py-2 font-mono text-[11px]">{header}</td>
-                <td className="px-3 py-2">
-                  <select
-                    value={mapping.find((row) => row.csv_header === header)?.field || 'ignore'}
-                    onChange={(event) => updateField(header, event.target.value as ColumnMapping['field'])}
-                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-900"
-                  >
-                    {FIELD_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
+              <TableRow key={header}>
+                <TableCell>
+                  <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                    {header}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Field</InputLabel>
+                    <Select
+                      value={mapping.find((row) => row.csv_header === header)?.field || 'ignore'}
+                      label="Field"
+                      onChange={(event) => updateField(header, event.target.value as ColumnMapping['field'])}
+                    >
+                      {FIELD_OPTIONS.map((option) => (
+                        <MenuItem key={option} value={option}>
+                          {option}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
   );
 }
 

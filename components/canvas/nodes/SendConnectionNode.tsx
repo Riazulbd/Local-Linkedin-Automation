@@ -14,7 +14,7 @@ export function SendConnectionNode({ data }: NodeProps<SendConnectionNodeData>) 
   return (
     <BaseNode
       title="Send Connection"
-      icon={<Handshake className="h-3.5 w-3.5" />}
+      icon={<Handshake size={14} />}
       description={data.connectionNote ? 'Uses invitation note' : 'Sends without note'}
       status={data.status}
       highlighted={data.highlighted}

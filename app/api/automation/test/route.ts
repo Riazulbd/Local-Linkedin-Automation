@@ -4,7 +4,27 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { completeExecutionRun, createTestExecutionRun } from '@/lib/supabase/queries/executions.queries';
 import { getLeadById } from '@/lib/supabase/queries/leads.queries';
 
+const DEFAULT_AUTOMATION_TEST_TIMEOUT_MS = 240000;
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+function isRequestTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') return true;
+  return /timed out|aborted/i.test(error.message);
+}
+
 export async function POST(req: NextRequest) {
+  const timeoutMs = readPositiveIntEnv('AUTOMATION_TEST_TIMEOUT_MS', DEFAULT_AUTOMATION_TEST_TIMEOUT_MS);
+  let profileId: string | undefined;
+
   try {
     const body = (await req.json()) as {
       nodeType?: string;
@@ -22,7 +42,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing BUN_SERVER_URL or BUN_SERVER_SECRET' }, { status: 500 });
     }
 
-    const profileId = body.linkedinProfileId || body.profileId;
+    profileId = body.linkedinProfileId || body.profileId;
     if (!profileId) {
       return NextResponse.json({ error: 'linkedinProfileId/profileId is required' }, { status: 400 });
     }
@@ -59,7 +79,7 @@ export async function POST(req: NextRequest) {
         linkedinUrl: lead?.linkedin_url || body.linkedinUrl || body.testUrl,
         isTest: true,
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     const payload = await response.json().catch(() => ({ success: false, error: 'Invalid Bun response' }));
@@ -80,12 +100,34 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ runId: run.id, ...payload });
   } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
+    if (isRequestTimeout(error)) {
+      let timeoutMessage =
+        `Automation test exceeded ${Math.round(timeoutMs / 1000)}s while waiting for bun-server.` +
+        ' Check bun-server health, AdsPower connectivity, and LinkedIn login state.';
+
+      if (profileId) {
+        try {
+          const supabase = createServiceClient();
+          const { data } = await supabase
+            .from('linkedin_profiles')
+            .select('login_status')
+            .eq('id', profileId)
+            .maybeSingle();
+
+          if ((data as { login_status?: string } | null)?.login_status === '2fa_pending') {
+            timeoutMessage =
+              'LinkedIn 2FA is pending for this profile. Submit the 2FA code first, then retry the test.';
+          }
+        } catch {
+          // Keep generic timeout message when status lookup fails.
+        }
+      }
+
       return NextResponse.json(
         {
           success: false,
-          error:
-            'Automation test timed out. Make sure bun-server is running in an interactive terminal where Chromium can open visibly.',
+          error: timeoutMessage,
+          timeoutMs,
         },
         { status: 504 }
       );

@@ -1,10 +1,29 @@
 import { NextResponse } from 'next/server';
 import { BUN_SERVER_SECRET, BUN_SERVER_URL } from '@/lib/config/constants';
 import { createServiceClient } from '@/lib/supabase/server';
+import { logAppAction } from '@/lib/supabase/queries/action-logs.queries';
 import { deleteProfile, getProfileById, updateProfile } from '@/lib/supabase/queries/profiles.queries';
 
 interface RouteContext {
   params: { id: string };
+}
+
+function sanitizeProfileRequest(body: Record<string, unknown>) {
+  return {
+    name: typeof body.name === 'string' ? body.name.trim() : null,
+    adspower_profile_id:
+      typeof body.adspower_profile_id === 'string' ? body.adspower_profile_id.trim() : null,
+    auto_create_adspower: body.auto_create_adspower === true,
+    brightdata_host:
+      typeof body.brightdata_host === 'string' ? body.brightdata_host.trim() : null,
+    brightdata_port: typeof body.brightdata_port === 'number' ? body.brightdata_port : null,
+    brightdata_username:
+      typeof body.brightdata_username === 'string' ? body.brightdata_username.trim() : null,
+    has_linkedin_email:
+      typeof body.linkedin_email === 'string' ? body.linkedin_email.trim().length > 0 : false,
+    has_linkedin_password:
+      typeof body.linkedin_password === 'string' ? body.linkedin_password.length > 0 : false,
+  };
 }
 
 async function maybeCreateAdsPowerProfile(body: Record<string, unknown>) {
@@ -16,20 +35,29 @@ async function maybeCreateAdsPowerProfile(body: Record<string, unknown>) {
       throw new Error('Missing bun server config for auto-create AdsPower profile');
     }
 
-    const res = await fetch(`${BUN_SERVER_URL}/adspower/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-server-secret': BUN_SERVER_SECRET,
-      },
-      body: JSON.stringify({
-        name: typeof body.name === 'string' ? body.name : 'LinkedIn Profile',
-        proxyHost: typeof body.brightdata_host === 'string' ? body.brightdata_host : undefined,
-        proxyPort: typeof body.brightdata_port === 'number' ? body.brightdata_port : undefined,
-        proxyUser: typeof body.brightdata_username === 'string' ? body.brightdata_username : undefined,
-        proxyPass: typeof body.brightdata_password === 'string' ? body.brightdata_password : undefined,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${BUN_SERVER_URL}/adspower/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-server-secret': BUN_SERVER_SECRET,
+        },
+        body: JSON.stringify({
+          name: typeof body.name === 'string' ? body.name : 'LinkedIn Profile',
+          proxyHost: typeof body.brightdata_host === 'string' ? body.brightdata_host : undefined,
+          proxyPort: typeof body.brightdata_port === 'number' ? body.brightdata_port : undefined,
+          proxyUser: typeof body.brightdata_username === 'string' ? body.brightdata_username : undefined,
+          proxyPass: typeof body.brightdata_password === 'string' ? body.brightdata_password : undefined,
+        }),
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to reach bun-server at ${BUN_SERVER_URL} for AdsPower auto-create: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
 
     const payload = await res.json().catch(() => ({ error: 'Invalid AdsPower create response' }));
     if (!res.ok || !payload.profileId) {
@@ -54,14 +82,23 @@ async function maybeEncryptCredentials(body: Record<string, unknown>) {
     throw new Error('Missing bun server config for credential encryption');
   }
 
-  const encRes = await fetch(`${BUN_SERVER_URL}/encrypt`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-server-secret': BUN_SERVER_SECRET,
-    },
-    body: JSON.stringify({ email, password }),
-  });
+  let encRes: Response;
+  try {
+    encRes = await fetch(`${BUN_SERVER_URL}/encrypt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-server-secret': BUN_SERVER_SECRET,
+      },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to reach bun-server at ${BUN_SERVER_URL} for credential encryption: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 
   const encPayload = await encRes.json().catch(() => ({ error: 'Invalid encryption response' }));
   if (!encRes.ok || !encPayload.encEmail || !encPayload.encPassword) {
@@ -91,10 +128,15 @@ export async function GET(_req: Request, { params }: RouteContext) {
 }
 
 export async function PUT(req: Request, { params }: RouteContext) {
-  try {
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-    const supabase = createServiceClient();
+  const rawBody = await req.json().catch(() => ({}));
+  const body =
+    rawBody && typeof rawBody === 'object'
+      ? (rawBody as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  const supabase = createServiceClient();
+  const requestSnapshot = sanitizeProfileRequest(body);
 
+  try {
     const adspowerProfileId = await maybeCreateAdsPowerProfile(body);
     const { encEmail, encPassword } = await maybeEncryptCredentials(body);
 
@@ -110,9 +152,25 @@ export async function PUT(req: Request, { params }: RouteContext) {
       login_status: encEmail && encPassword ? 'logged_out' : undefined,
       linkedin_email: undefined,
     });
+    await logAppAction(supabase, {
+      actionType: 'profile.update',
+      entityType: 'linkedin_profile',
+      entityId: params.id,
+      status: 'success',
+      requestData: requestSnapshot,
+      responseData: { profile_id: profile.id, login_status: profile.login_status ?? null },
+    }).catch(() => undefined);
 
     return NextResponse.json({ profile });
   } catch (error) {
+    await logAppAction(supabase, {
+      actionType: 'profile.update',
+      entityType: 'linkedin_profile',
+      entityId: params.id,
+      status: 'error',
+      requestData: requestSnapshot,
+      errorMessage: error instanceof Error ? error.message : 'Failed to update profile',
+    }).catch(() => undefined);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to update profile' },
       { status: 500 }
@@ -121,10 +179,25 @@ export async function PUT(req: Request, { params }: RouteContext) {
 }
 
 export async function DELETE(_req: Request, { params }: RouteContext) {
+  const supabase = createServiceClient();
   try {
-    await deleteProfile(createServiceClient(), params.id);
+    await deleteProfile(supabase, params.id);
+    await logAppAction(supabase, {
+      actionType: 'profile.delete',
+      entityType: 'linkedin_profile',
+      entityId: params.id,
+      status: 'success',
+      responseData: { deleted: true },
+    }).catch(() => undefined);
     return NextResponse.json({ success: true });
   } catch (error) {
+    await logAppAction(supabase, {
+      actionType: 'profile.delete',
+      entityType: 'linkedin_profile',
+      entityId: params.id,
+      status: 'error',
+      errorMessage: error instanceof Error ? error.message : 'Failed to delete profile',
+    }).catch(() => undefined);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to delete profile' },
       { status: 500 }

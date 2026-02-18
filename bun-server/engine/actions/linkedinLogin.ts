@@ -14,10 +14,28 @@ export type LoginOutcome =
   | 'unknown_challenge'
   | 'error';
 
+export interface EnsureLoginOptions {
+  twoFactorTimeoutMs?: number;
+}
+
+function resolveTwoFactorTimeoutMs(overrideMs?: number): number {
+  if (Number.isFinite(overrideMs) && Number(overrideMs) > 0) {
+    return Math.floor(Number(overrideMs));
+  }
+
+  const envTimeout = Number(process.env.LINKEDIN_2FA_WAIT_TIMEOUT_MS || 300000);
+  if (!Number.isFinite(envTimeout) || envTimeout <= 0) {
+    return 300000;
+  }
+
+  return Math.floor(envTimeout);
+}
+
 export async function ensureLoggedIn(
   page: Page,
   profileId: string,
-  _adspowerProfileId: string
+  _adspowerProfileId: string,
+  options: EnsureLoginOptions = {}
 ): Promise<LoginOutcome> {
   const url = page.url();
   if (url.includes('linkedin.com') && !url.includes('/login') && !url.includes('/authwall')) {
@@ -103,7 +121,7 @@ export async function ensureLoggedIn(
       })
       .eq('id', profileId);
 
-    const code = await waitFor2FACode(profileId);
+    const code = await waitFor2FACode(profileId, resolveTwoFactorTimeoutMs(options.twoFactorTimeoutMs));
 
     if (!code) {
       await supabase.from('linkedin_profiles').update({ login_status: 'error' }).eq('id', profileId);

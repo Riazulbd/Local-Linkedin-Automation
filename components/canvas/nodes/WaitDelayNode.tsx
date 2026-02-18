@@ -18,7 +18,7 @@ export function WaitDelayNode({ data }: NodeProps<WaitNodeData>) {
   return (
     <BaseNode
       title="Wait Delay"
-      icon={<Timer className="h-3.5 w-3.5" />}
+      icon={<Timer size={14} />}
       description={text}
       status={data.status}
       highlighted={data.highlighted}

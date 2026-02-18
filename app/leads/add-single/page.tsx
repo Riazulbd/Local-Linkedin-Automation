@@ -1,54 +1,138 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useProfileStore } from '@/store/profileStore';
-import type { LeadFolder } from '@/types';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Alert,
+  Box,
+  Button,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import type { LeadFolder, LinkedInProfile } from '@/types';
 
-export default function AddSingleLeadPage() {
+interface ProfilesPayload {
+  profiles?: LinkedInProfile[];
+  error?: string;
+}
+
+interface FoldersPayload {
+  folders?: LeadFolder[];
+  error?: string;
+}
+
+function AddSingleLeadContent() {
   const router = useRouter();
-  const profiles = useProfileStore((state) => state.profiles);
-  const selectedProfile = useProfileStore((state) => state.selectedProfile);
-  const selectProfileById = useProfileStore((state) => state.selectProfileById);
+  const searchParams = useSearchParams();
+  const presetFolderId = searchParams.get('folderId')?.trim() || '';
 
+  const [profiles, setProfiles] = useState<LinkedInProfile[]>([]);
   const [folders, setFolders] = useState<LeadFolder[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState('');
   const [folderId, setFolderId] = useState('');
   const [url, setUrl] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [company, setCompany] = useState('');
   const [title, setTitle] = useState('');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
+    [profiles, selectedProfileId]
+  );
+
+  const loadOptions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [profilesRes, foldersRes] = await Promise.all([
+        fetch('/api/profiles', { cache: 'no-store' }),
+        fetch('/api/lead-folders', { cache: 'no-store' }),
+      ]);
+
+      const profilesPayload = (await profilesRes.json().catch(() => ({}))) as ProfilesPayload;
+      const foldersPayload = (await foldersRes.json().catch(() => ({}))) as FoldersPayload;
+
+      if (!profilesRes.ok) {
+        throw new Error(profilesPayload.error || 'Failed to load profiles');
+      }
+
+      const nextProfiles = profilesPayload.profiles ?? [];
+      const nextFolders = foldersRes.ok ? foldersPayload.folders ?? [] : [];
+
+      setProfiles(nextProfiles);
+      setFolders(nextFolders);
+      setSelectedProfileId((current) => {
+        if (current && nextProfiles.some((profile) => profile.id === current)) return current;
+        return nextProfiles[0]?.id ?? '';
+      });
+      setFolderId((current) => {
+        if (current && nextFolders.some((folder) => folder.id === current)) return current;
+        if (presetFolderId && nextFolders.some((folder) => folder.id === presetFolderId)) return presetFolderId;
+        return '';
+      });
+
+      if (!foldersRes.ok) {
+        setError(foldersPayload.error || 'Failed to load folders. You can still save without selecting one.');
+      }
+    } catch (loadError) {
+      setProfiles([]);
+      setFolders([]);
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load profiles and folders');
+    } finally {
+      setLoading(false);
+    }
+  }, [presetFolderId]);
 
   useEffect(() => {
-    fetch('/api/lead-folders', { cache: 'no-store' })
-      .then((res) => res.json().catch(() => ({})))
-      .then((payload) => setFolders((payload.folders ?? []) as LeadFolder[]))
-      .catch(() => setFolders([]));
-  }, []);
+    void loadOptions();
+  }, [loadOptions]);
+
+  const isValidLinkedInUrl = (input: string): boolean => {
+    const candidate = input.trim();
+    if (!candidate) return false;
+
+    try {
+      const parsed = new URL(candidate);
+      return parsed.hostname.includes('linkedin.com') && parsed.pathname.includes('/in/');
+    } catch {
+      return false;
+    }
+  };
 
   async function saveLead() {
-    if (!selectedProfile?.id) {
-      setError('Select a profile first.');
+    setError(null);
+    setSuccess(null);
+
+    if (!selectedProfileId) {
+      setError('Select a LinkedIn profile first.');
       return;
     }
 
-    if (!url.includes('linkedin.com/in/')) {
-      setError('Enter a valid LinkedIn profile URL.');
+    if (!isValidLinkedInUrl(url)) {
+      setError('Enter a valid LinkedIn profile URL (example: https://www.linkedin.com/in/username/).');
       return;
     }
 
     setSaving(true);
-    setError(null);
-
     try {
       const response = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          profile_id: selectedProfile.id,
+          profile_id: selectedProfileId,
           folder_id: folderId || undefined,
           linkedin_url: url.trim(),
           first_name: firstName.trim() || undefined,
@@ -58,11 +142,12 @@ export default function AddSingleLeadPage() {
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to add lead');
       }
 
+      setSuccess('Lead added successfully.');
       router.push('/leads');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to add lead');
@@ -72,122 +157,166 @@ export default function AddSingleLeadPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Link href="/leads" className="text-xs text-slate-500 hover:text-slate-700">
-            Back to leads
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-900">Add Single Lead</h1>
-          <p className="text-sm text-slate-500">Create one lead manually for quick testing.</p>
-        </div>
-      </div>
+    <Box sx={{ p: 4, maxWidth: 900 }} data-animate="page">
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={4}>
+        <Box>
+          <Typography variant="h4" fontWeight={600}>
+            Add Single Lead
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Create one lead manually for quick testing.
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={2}>
+          <Button component={Link} href="/leads/folders" variant="outlined">
+            Manage Folders
+          </Button>
+          <Button component={Link} href="/leads" variant="outlined">
+            Back to Leads
+          </Button>
+        </Stack>
+      </Stack>
 
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <label className="block text-xs text-slate-600">
-          Profile
-          <select
-            value={selectedProfile?.id || ''}
-            onChange={(event) => selectProfileById(event.target.value || null)}
-            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-          >
-            <option value="">Select profile</option>
-            {profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      {loading ? (
+        <Alert severity="info">Loading profiles and folders...</Alert>
+      ) : (
+        <Stack spacing={3}>
+          {profiles.length === 0 && (
+            <Alert severity="warning">
+              No LinkedIn profiles found. Create one first from{' '}
+              <Link href="/settings/profiles">Settings → Profiles</Link>.
+            </Alert>
+          )}
 
-        <label className="block text-xs text-slate-600">
-          Folder (optional)
-          <select
-            value={folderId}
-            onChange={(event) => setFolderId(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-          >
-            <option value="">No folder</option>
-            {folders.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          {error && (
+            <Alert
+              severity="error"
+              action={
+                <Button color="inherit" size="small" onClick={() => loadOptions().catch(() => undefined)}>
+                  Retry
+                </Button>
+              }
+            >
+              {error}
+            </Alert>
+          )}
+          {success && <Alert severity="success">{success}</Alert>}
 
-        <label className="block text-xs text-slate-600">
-          LinkedIn URL *
-          <input
-            type="url"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://www.linkedin.com/in/username/"
-            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-          />
-          <span className="mt-1 block text-[11px] text-slate-500">
-            You can leave other fields blank and auto-scrape them on first visit.
-          </span>
-        </label>
+          <Paper sx={{ p: 3 }}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>LinkedIn Profile</InputLabel>
+                  <Select
+                    value={selectedProfileId}
+                    onChange={(event) => setSelectedProfileId(String(event.target.value))}
+                    label="LinkedIn Profile"
+                  >
+                    <MenuItem value="">Select profile</MenuItem>
+                    {profiles.map((profile) => (
+                      <MenuItem key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs text-slate-600">
-            First Name
-            <input
-              value={firstName}
-              onChange={(event) => setFirstName(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-            />
-          </label>
-          <label className="block text-xs text-slate-600">
-            Last Name
-            <input
-              value={lastName}
-              onChange={(event) => setLastName(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-            />
-          </label>
-        </div>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Folder (optional)</InputLabel>
+                  <Select
+                    value={folderId}
+                    onChange={(event) => setFolderId(String(event.target.value))}
+                    label="Folder (optional)"
+                  >
+                    <MenuItem value="">No folder</MenuItem>
+                    {folders.map((folder) => (
+                      <MenuItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs text-slate-600">
-            Company
-            <input
-              value={company}
-              onChange={(event) => setCompany(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-            />
-          </label>
-          <label className="block text-xs text-slate-600">
-            Job Title
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-            />
-          </label>
-        </div>
-      </div>
+              <Grid item xs={12}>
+                <TextField
+                  label="LinkedIn URL"
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="https://www.linkedin.com/in/username/"
+                  helperText="Required. Other fields can be left blank and enriched later."
+                  fullWidth
+                />
+              </Grid>
 
-      {error && <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="First Name"
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  fullWidth
+                />
+              </Grid>
 
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={() => saveLead().catch(() => undefined)}
-          disabled={saving || !url.trim()}
-          className="rounded-md border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
-        >
-          {saving ? 'Saving...' : 'Add Lead'}
-        </button>
-      </div>
-    </main>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Last Name"
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  fullWidth
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Company"
+                  value={company}
+                  onChange={(event) => setCompany(event.target.value)}
+                  fullWidth
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Job Title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  fullWidth
+                />
+              </Grid>
+            </Grid>
+          </Paper>
+
+          {selectedProfile && (
+            <Alert severity="info">
+              Lead will be saved under profile <strong>{selectedProfile.name}</strong>.
+            </Alert>
+          )}
+
+          <Stack direction="row" justifyContent="flex-end" spacing={2}>
+            <Button variant="outlined" onClick={() => router.back()}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => saveLead().catch(() => undefined)}
+              disabled={saving || !selectedProfileId || !url.trim()}
+            >
+              {saving ? 'Saving...' : 'Add Lead'}
+            </Button>
+          </Stack>
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
+export default function AddSingleLeadPage() {
+  return (
+    <Suspense fallback={<Box sx={{ p: 4 }}><Alert severity="info">Loading lead form...</Alert></Box>}>
+      <AddSingleLeadContent />
+    </Suspense>
   );
 }

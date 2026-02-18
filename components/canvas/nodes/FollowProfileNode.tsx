@@ -14,7 +14,7 @@ export function FollowProfileNode({ data }: NodeProps<FollowNodeData>) {
   return (
     <BaseNode
       title="Follow Profile"
-      icon={<UserPlus className="h-3.5 w-3.5" />}
+      icon={<UserPlus size={14} />}
       description={data.fallbackToConnect === false ? 'Follow only' : 'Falls back to connect'}
       status={data.status}
       highlighted={data.highlighted}

@@ -30,3 +30,16 @@ export interface CreateLeadInput {
   notes?: string;
   extra_data?: Record<string, string>;
 }
+
+export interface UpdateLeadInput {
+  profile_id?: string;
+  linkedin_url?: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  company?: string | null;
+  title?: string | null;
+  folder_id?: string | null;
+  notes?: string | null;
+  status?: LeadStatus;
+  extra_data?: Record<string, string>;
+}

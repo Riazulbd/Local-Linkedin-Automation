@@ -14,7 +14,7 @@ export function VisitProfileNode({ data }: NodeProps<VisitNodeData>) {
   return (
     <BaseNode
       title="Visit Profile"
-      icon={<Eye className="h-3.5 w-3.5" />}
+      icon={<Eye size={14} />}
       description={data.useCurrentLead ? 'Uses current lead URL' : data.url || 'Opens manual profile URL'}
       status={data.status}
       highlighted={data.highlighted}

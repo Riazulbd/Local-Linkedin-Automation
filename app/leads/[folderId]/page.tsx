@@ -1,79 +1,121 @@
 'use client';
 
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import Papa from 'papaparse';
 import { useParams } from 'next/navigation';
-import { CSVImportMapper } from '@/components/leads-folders/CSVImportMapper';
-import { useProfileStore } from '@/store/profileStore';
-import type { ColumnMapping, CSVLeadRow, Lead, LeadFolder } from '@/types';
+import {
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  IconButton,
+  InputLabel,
+  Link as MuiLink,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { Delete, Edit } from '@mui/icons-material';
+import { StatusChip } from '@/components/ui/StatusChip';
+import type { Lead, LeadFolder, LeadStatus } from '@/types';
 
-type LeadFilterStatus = 'all' | Lead['status'];
+type LeadFilterStatus = 'all' | LeadStatus;
 
-function guessField(header: string): ColumnMapping['field'] {
-  const normalized = header.trim().toLowerCase();
-  if (normalized.includes('linkedin') || normalized.includes('profile url')) return 'linkedin_url';
-  if (normalized.includes('first')) return 'first_name';
-  if (normalized.includes('last')) return 'last_name';
-  if (normalized.includes('company')) return 'company';
-  if (normalized.includes('title')) return 'title';
-  return 'ignore';
+interface FolderPayload {
+  folder?: LeadFolder;
+  error?: string;
 }
 
-function inferMapping(rows: CSVLeadRow[]): ColumnMapping[] {
-  if (!rows.length) return [];
-  return Object.keys(rows[0]).map((header) => ({
-    csv_header: header,
-    field: guessField(header),
-  }));
+interface LeadsPayload {
+  leads?: Lead[];
+  data?: Lead[];
+  error?: string;
 }
+
+interface FoldersPayload {
+  folders?: LeadFolder[];
+  error?: string;
+}
+
+interface LeadDraft {
+  linkedin_url: string;
+  first_name: string;
+  last_name: string;
+  company: string;
+  title: string;
+  status: LeadStatus;
+  folder_id: string;
+}
+
+const STATUS_OPTIONS: LeadStatus[] = ['pending', 'running', 'completed', 'failed', 'skipped'];
 
 export default function LeadFolderDetailPage() {
   const params = useParams<{ folderId: string }>();
   const folderId = String(params?.folderId || '');
-  const selectedProfile = useProfileStore((state) => state.selectedProfile);
 
   const [folder, setFolder] = useState<LeadFolder | null>(null);
+  const [folders, setFolders] = useState<LeadFolder[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadFilterStatus>('all');
   const [search, setSearch] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [showImport, setShowImport] = useState(false);
-  const [csvRows, setCsvRows] = useState<CSVLeadRow[]>([]);
-  const [mapping, setMapping] = useState<ColumnMapping[]>([]);
-  const [isImporting, setIsImporting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [editDraft, setEditDraft] = useState<LeadDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingLead, setDeletingLead] = useState<Lead | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  async function loadFolder() {
+  const loadFolderData = useCallback(async () => {
     if (!folderId) return;
-    setIsLoading(true);
+
+    setLoading(true);
     setError(null);
     try {
-      const [folderRes, leadsRes] = await Promise.all([
-        fetch(`/api/lead-folders/${folderId}`, { cache: 'no-store' }),
-        fetch(`/api/lead-folders/${folderId}/leads`, { cache: 'no-store' }),
+      const [folderRes, leadsRes, foldersRes] = await Promise.all([
+        fetch(`/api/lead-folders/${encodeURIComponent(folderId)}`, { cache: 'no-store' }),
+        fetch(`/api/lead-folders/${encodeURIComponent(folderId)}/leads`, { cache: 'no-store' }),
+        fetch('/api/lead-folders', { cache: 'no-store' }),
       ]);
 
-      const folderPayload = await folderRes.json().catch(() => ({}));
-      const leadsPayload = await leadsRes.json().catch(() => ({}));
+      const folderPayload = (await folderRes.json().catch(() => ({}))) as FolderPayload;
+      const leadsPayload = (await leadsRes.json().catch(() => ({}))) as LeadsPayload;
+      const foldersPayload = (await foldersRes.json().catch(() => ({}))) as FoldersPayload;
 
       if (!folderRes.ok) throw new Error(folderPayload.error || 'Failed to load folder');
       if (!leadsRes.ok) throw new Error(leadsPayload.error || 'Failed to load folder leads');
+      if (!foldersRes.ok) throw new Error(foldersPayload.error || 'Failed to load folders');
 
       setFolder(folderPayload.folder ?? null);
-      setLeads(leadsPayload.leads ?? []);
+      setLeads(leadsPayload.leads ?? leadsPayload.data ?? []);
+      setFolders(foldersPayload.folders ?? []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load folder');
+      setFolder(null);
+      setLeads([]);
+      setFolders([]);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }
+  }, [folderId]);
 
   useEffect(() => {
-    loadFolder().catch(() => undefined);
-  }, [folderId]);
+    void loadFolderData();
+  }, [loadFolderData]);
 
   const filteredLeads = useMemo(() => {
     return leads.filter((lead) => {
@@ -93,244 +135,307 @@ export default function LeadFolderDetailPage() {
     });
   }, [leads, search, statusFilter]);
 
-  function onFileSelected(file: File) {
-    setError(null);
-    setMessage(null);
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (result) => {
-        const parsed = (result.data as Record<string, string>[]).map((row) => row as CSVLeadRow);
-        setCsvRows(parsed);
-        setMapping(inferMapping(parsed));
-      },
-      error: (parseError) => {
-        setError(parseError.message);
-      },
+  const openEditDialog = (lead: Lead) => {
+    setEditingLead(lead);
+    setEditDraft({
+      linkedin_url: lead.linkedin_url,
+      first_name: lead.first_name ?? '',
+      last_name: lead.last_name ?? '',
+      company: lead.company ?? '',
+      title: lead.title ?? '',
+      status: lead.status,
+      folder_id: lead.folder_id ?? '',
     });
-  }
+  };
 
-  async function importCsv() {
-    if (!selectedProfile?.id) {
-      setError('Select a profile first before importing leads');
-      return;
-    }
-    if (!csvRows.length) {
-      setError('Upload a CSV file first');
-      return;
-    }
+  const closeEditDialog = () => {
+    setEditingLead(null);
+    setEditDraft(null);
+    setSaving(false);
+  };
 
-    const effectiveMapping = mapping.length ? mapping : inferMapping(csvRows);
-    const mappedRows = csvRows.map((row) => {
-      const mapped: CSVLeadRow = { linkedin_url: '' };
-      for (const item of effectiveMapping) {
-        if (item.field === 'ignore') continue;
-        mapped[item.field] = row[item.csv_header];
-      }
-      return mapped;
-    });
-
-    const leadsPayload = mappedRows
-      .filter((row) => typeof row.linkedin_url === 'string' && row.linkedin_url.trim().length > 0)
-      .map((row) => ({
-        linkedin_url: row.linkedin_url.trim(),
-        first_name: row.first_name?.trim() || '',
-        last_name: row.last_name?.trim() || '',
-        company: row.company?.trim() || '',
-        title: row.title?.trim() || '',
-      }));
-
-    if (!leadsPayload.length) {
-      setError('No valid linkedin_url values found after mapping');
+  const saveLead = async () => {
+    if (!editingLead || !editDraft) return;
+    if (!editDraft.linkedin_url.trim()) {
+      setError('LinkedIn URL is required.');
       return;
     }
 
-    setIsImporting(true);
+    setSaving(true);
     setError(null);
-    setMessage(null);
     try {
-      const response = await fetch('/api/leads/upload', {
-        method: 'POST',
+      const response = await fetch(`/api/leads/${editingLead.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          profileId: selectedProfile.id,
-          folderId,
-          leads: leadsPayload,
+          linkedin_url: editDraft.linkedin_url.trim(),
+          first_name: editDraft.first_name.trim() || null,
+          last_name: editDraft.last_name.trim() || null,
+          company: editDraft.company.trim() || null,
+          title: editDraft.title.trim() || null,
+          status: editDraft.status,
+          folder_id: editDraft.folder_id || null,
         }),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to import CSV');
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to update lead');
+      }
 
-      setMessage(`Imported ${payload.inserted ?? leadsPayload.length} leads`);
-      setShowImport(false);
-      setCsvRows([]);
-      setMapping([]);
-      await loadFolder();
-    } catch (importError) {
-      setError(importError instanceof Error ? importError.message : 'Failed to import CSV');
-    } finally {
-      setIsImporting(false);
+      closeEditDialog();
+      await loadFolderData();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to update lead');
+      setSaving(false);
     }
-  }
+  };
+
+  const deleteLead = async () => {
+    if (!deletingLead) return;
+    setDeleting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/leads/${deletingLead.id}`, { method: 'DELETE' });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to delete lead');
+      }
+
+      setDeletingLead(null);
+      await loadFolderData();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete lead');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <Link href="/leads" className="text-xs text-slate-500 hover:text-slate-700">
-            Back to folders
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-900">{folder?.name || 'Folder'}</h1>
-          <p className="text-sm text-slate-500">
-            {folder?.description || 'Leads in this folder are ready to be attached to campaigns.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowImport(true)}
-          className="rounded-md border border-cyan-400/40 px-3 py-1.5 text-sm text-cyan-200 hover:bg-cyan-500/20"
-        >
-          Import CSV
-        </button>
-      </div>
+    <Box sx={{ p: 4 }} data-animate="page">
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={4} spacing={2}>
+        <Box>
+          <Typography variant="h4" fontWeight={600}>
+            {folder?.name || 'Folder'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {folder?.description || 'Leads assigned to this folder.'}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={2}>
+          <Button component={Link} href="/leads/import" variant="outlined">
+            Import CSV
+          </Button>
+          <Button component={Link} href={`/leads/add-single?folderId=${encodeURIComponent(folderId)}`} variant="contained">
+            Add Lead
+          </Button>
+          <Button component={Link} href="/leads" variant="outlined">
+            Back
+          </Button>
+        </Stack>
+      </Stack>
 
-      <div className="grid gap-3 md:grid-cols-[220px_1fr]">
-        <label className="text-xs text-slate-600">
-          Status
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as LeadFilterStatus)}
-            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
-          >
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="running">Running</option>
-            <option value="completed">Completed</option>
-            <option value="failed">Failed</option>
-            <option value="skipped">Skipped</option>
-          </select>
-        </label>
-        <label className="text-xs text-slate-600">
-          Search
-          <input
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <FormControl sx={{ minWidth: 220 }}>
+            <InputLabel>Status</InputLabel>
+            <Select
+              value={statusFilter}
+              label="Status"
+              onChange={(event) => setStatusFilter(event.target.value as LeadFilterStatus)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              {STATUS_OPTIONS.map((status) => (
+                <MenuItem key={status} value={status}>
+                  {status}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Search Leads"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by name, company, title, URL"
-            className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-900"
+            placeholder="Name, company, title, LinkedIn URL"
+            fullWidth
           />
-        </label>
-      </div>
+        </Stack>
+      </Paper>
 
-      {isLoading && <p className="text-sm text-slate-500">Loading folder...</p>}
-      {error && <p className="text-sm text-rose-300">{error}</p>}
-      {message && <p className="text-sm text-emerald-300">{message}</p>}
-
-      <div className="overflow-auto rounded-xl border border-slate-200">
-        <table className="min-w-full text-left text-sm text-slate-700">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Company</th>
-              <th className="px-3 py-2">Title</th>
-              <th className="px-3 py-2">LinkedIn URL</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Added</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredLeads.map((lead) => (
-              <tr key={lead.id} className="border-t border-slate-200">
-                <td className="px-3 py-2">{`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '-'}</td>
-                <td className="px-3 py-2">{lead.company || '-'}</td>
-                <td className="px-3 py-2">{lead.title || '-'}</td>
-                <td className="px-3 py-2">
-                  <a
-                    href={lead.linkedin_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-cyan-300 hover:underline"
-                  >
-                    {lead.linkedin_url}
-                  </a>
-                </td>
-                <td className="px-3 py-2">{lead.status}</td>
-                <td className="px-3 py-2">{new Date(lead.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
-            {!filteredLeads.length && (
-              <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">
-                  No leads found for this filter.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {showImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-4xl rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">Import CSV to {folder?.name || 'folder'}</h2>
-                <p className="text-xs text-slate-500">
-                  Map CSV columns to lead fields. `linkedin_url` is required.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowImport(false)}
-                className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-3">
-              <label className="text-xs text-slate-600">
-                CSV File
-                <input
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) onFileSelected(file);
-                  }}
-                  className="mt-1 block text-xs text-slate-700"
-                />
-              </label>
-
-              <CSVImportMapper rows={csvRows.slice(0, 5)} onChange={setMapping} />
-
-              {!selectedProfile?.id && (
-                <p className="text-xs text-amber-500">
-                  Select a profile from the sidebar before importing leads.
-                </p>
+      {loading ? (
+        <Paper sx={{ p: 6, textAlign: 'center' }}>
+          <Typography color="text.secondary">Loading folder...</Typography>
+        </Paper>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Company</TableCell>
+                <TableCell>Title</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>LinkedIn</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredLeads.map((lead) => (
+                <TableRow key={lead.id} hover>
+                  <TableCell>{`${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '—'}</TableCell>
+                  <TableCell>{lead.company || '—'}</TableCell>
+                  <TableCell>{lead.title || '—'}</TableCell>
+                  <TableCell>
+                    <StatusChip status={lead.status} />
+                  </TableCell>
+                  <TableCell>
+                    <MuiLink href={lead.linkedin_url} target="_blank" rel="noopener">
+                      View
+                    </MuiLink>
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton color="primary" size="small" onClick={() => openEditDialog(lead)}>
+                      <Edit fontSize="small" />
+                    </IconButton>
+                    <IconButton color="error" size="small" onClick={() => setDeletingLead(lead)}>
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredLeads.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <Typography align="center" color="text.secondary" sx={{ py: 3 }}>
+                      No leads found for this filter.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
               )}
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowImport(false)}
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isImporting || !csvRows.length}
-                  onClick={() => importCsv().catch(() => undefined)}
-                  className="rounded-md border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
-                >
-                  {isImporting ? 'Importing...' : 'Import Leads'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
-    </main>
+
+      <Dialog open={Boolean(editingLead && editDraft)} onClose={closeEditDialog} fullWidth maxWidth="sm">
+        <DialogTitle>Edit Lead</DialogTitle>
+        <DialogContent>
+          {editDraft && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <TextField
+                label="LinkedIn URL"
+                value={editDraft.linkedin_url}
+                onChange={(event) =>
+                  setEditDraft((prev) => (prev ? { ...prev, linkedin_url: event.target.value } : prev))
+                }
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="First Name"
+                  value={editDraft.first_name}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, first_name: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="Last Name"
+                  value={editDraft.last_name}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, last_name: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="Company"
+                  value={editDraft.company}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, company: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="Title"
+                  value={editDraft.title}
+                  onChange={(event) =>
+                    setEditDraft((prev) => (prev ? { ...prev, title: event.target.value } : prev))
+                  }
+                  fullWidth
+                />
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={editDraft.status}
+                    label="Status"
+                    onChange={(event) =>
+                      setEditDraft((prev) =>
+                        prev ? { ...prev, status: event.target.value as LeadStatus } : prev
+                      )
+                    }
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <MenuItem key={status} value={status}>
+                        {status}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>Folder</InputLabel>
+                  <Select
+                    value={editDraft.folder_id}
+                    label="Folder"
+                    onChange={(event) =>
+                      setEditDraft((prev) => (prev ? { ...prev, folder_id: String(event.target.value) } : prev))
+                    }
+                  >
+                    <MenuItem value="">Unassigned</MenuItem>
+                    {folders.map((entry) => (
+                      <MenuItem key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEditDialog}>Cancel</Button>
+          <Button variant="contained" onClick={() => saveLead().catch(() => undefined)} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingLead)} onClose={() => setDeletingLead(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete Lead</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will permanently remove{' '}
+            <strong>{`${deletingLead?.first_name || ''} ${deletingLead?.last_name || ''}`.trim() || 'this lead'}</strong>.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeletingLead(null)} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button color="error" variant="contained" disabled={deleting} onClick={() => deleteLead().catch(() => undefined)}>
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

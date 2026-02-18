@@ -1,32 +1,32 @@
 'use client';
 
-import type { ComponentType, DragEvent } from 'react';
+import type { DragEvent, ElementType } from 'react';
 import {
-  Eye,
-  MessageSquare,
-  UserPlus,
-  Handshake,
-  Timer,
-  SearchCheck,
-  GitBranchPlus,
-  RefreshCcw,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+  AltRouteRounded,
+  AutorenewRounded,
+  LinkRounded,
+  ManageSearchRounded,
+  MessageRounded,
+  PersonAddRounded,
+  TimerRounded,
+  VisibilityRounded,
+} from '@mui/icons-material';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import type { NodeType } from '@/types';
 
 const NODE_OPTIONS: Array<{
   type: NodeType;
   label: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: ElementType;
 }> = [
-  { type: 'visit_profile', label: 'Visit Profile', icon: Eye },
-  { type: 'send_message', label: 'Send Message', icon: MessageSquare },
-  { type: 'follow_profile', label: 'Follow Profile', icon: UserPlus },
-  { type: 'send_connection', label: 'Send Connection', icon: Handshake },
-  { type: 'wait_delay', label: 'Wait Delay', icon: Timer },
-  { type: 'check_connection', label: 'Check Connection', icon: SearchCheck },
-  { type: 'if_condition', label: 'If Condition', icon: GitBranchPlus },
-  { type: 'loop_leads', label: 'Loop Leads', icon: RefreshCcw },
+  { type: 'visit_profile', label: 'Visit Profile', icon: VisibilityRounded },
+  { type: 'send_message', label: 'Send Message', icon: MessageRounded },
+  { type: 'follow_profile', label: 'Follow Profile', icon: PersonAddRounded },
+  { type: 'send_connection', label: 'Send Connection', icon: LinkRounded },
+  { type: 'wait_delay', label: 'Wait Delay', icon: TimerRounded },
+  { type: 'check_connection', label: 'Check Connection', icon: ManageSearchRounded },
+  { type: 'if_condition', label: 'If Condition', icon: AltRouteRounded },
+  { type: 'loop_leads', label: 'Loop Leads', icon: AutorenewRounded },
 ];
 
 export function NodePalette() {
@@ -36,29 +36,41 @@ export function NodePalette() {
   };
 
   return (
-    <aside className="h-full overflow-y-auto border-r border-border bg-bg-surface p-3">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">Node Palette</h2>
-      <div className="space-y-2">
+    <Box sx={{ height: '100%', overflowY: 'auto', borderRight: 1, borderColor: 'divider', p: 2 }}>
+      <Typography variant="subtitle2" sx={{ mb: 2 }}>
+        Node Palette
+      </Typography>
+      <Stack spacing={1}>
         {NODE_OPTIONS.map((node) => {
           const Icon = node.icon;
           return (
-            <button
+            <Button
               key={node.type}
               type="button"
               draggable
               onDragStart={(event) => onDragStart(event, node.type)}
-              className={cn(
-                'group flex w-full items-center gap-2 rounded-md border border-border bg-bg-elevated px-2.5 py-2 text-left text-xs transition',
-                'hover:border-accent/50 hover:bg-bg-base'
-              )}
+              variant="outlined"
+              color="inherit"
+              startIcon={<Icon fontSize="small" />}
+              sx={{
+                justifyContent: 'flex-start',
+                borderColor: 'divider',
+                bgcolor: 'background.paper',
+                color: 'text.primary',
+                '&:hover': {
+                  borderColor: 'primary.main',
+                  bgcolor: 'action.hover',
+                },
+              }}
             >
-              <Icon className="h-3.5 w-3.5 text-accent" />
-              <span className="text-text-primary">{node.label}</span>
-            </button>
+              {node.label}
+            </Button>
           );
         })}
-      </div>
-      <p className="mt-4 text-[11px] leading-4 text-text-faint">Drag nodes to the canvas and connect outputs to inputs.</p>
-    </aside>
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+        Drag nodes into canvas and connect outputs to inputs.
+      </Typography>
+    </Box>
   );
 }

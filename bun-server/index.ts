@@ -87,7 +87,8 @@ function buildServer(
   executor: WorkflowExecutor,
   campaignExecutor: CampaignExecutor,
   uniboxSyncer: UniboxSyncer,
-  loginManager: LoginManager
+  loginManager: LoginManager,
+  serverSecret: string
 ) {
   return createServer(async (req, res) => {
     const method = req.method || 'GET';
@@ -137,8 +138,19 @@ function buildServer(
       return;
     }
 
-    const secret = req.headers['x-server-secret'];
-    if (secret !== process.env.BUN_SERVER_SECRET) {
+    if (!serverSecret) {
+      writeJson(
+        res,
+        500,
+        { error: 'Missing BUN_SERVER_SECRET or BUN_SECRET in bun-server environment' },
+        requestOrigin
+      );
+      return;
+    }
+
+    const headerSecret = req.headers['x-server-secret'];
+    const secret = Array.isArray(headerSecret) ? headerSecret[0] : headerSecret;
+    if (secret !== serverSecret) {
       logger.warn('Rejected request with invalid server secret', {
         path: url.pathname,
         method,
@@ -429,13 +441,21 @@ function buildServer(
 
 async function main() {
   await loadLocalEnv();
+  const serverSecret =
+    process.env.BUN_SERVER_SECRET?.trim() ||
+    process.env.BUN_SECRET?.trim() ||
+    '';
 
   const executor = new WorkflowExecutor();
   const campaignExecutor = new CampaignExecutor();
   const uniboxSyncer = new UniboxSyncer();
   const loginManager = new LoginManager();
 
-  const server = buildServer(executor, campaignExecutor, uniboxSyncer, loginManager);
+  if (!serverSecret) {
+    logger.warn('No bun server secret configured. Set BUN_SERVER_SECRET or BUN_SECRET.');
+  }
+
+  const server = buildServer(executor, campaignExecutor, uniboxSyncer, loginManager, serverSecret);
   server.listen(port, () => {
     logger.info('Automation server started', {
       runtime: 'node',

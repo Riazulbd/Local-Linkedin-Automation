@@ -3,6 +3,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Slider,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { CampaignStepEditor } from '@/components/campaigns/CampaignStepEditor';
 import { CampaignStatusBadge } from '@/components/campaigns/CampaignStatusBadge';
 import { useCampaignContext } from '@/lib/context/CampaignContext';
@@ -92,22 +106,17 @@ export default function CampaignDetailPage() {
       }
     }
 
-    loadOptions().catch(() => undefined);
+    void loadOptions();
     return () => {
       mounted = false;
     };
   }, []);
 
-  const orderedSteps = useMemo(
-    () => steps.map((step, index) => normalizeStep(step, index)),
-    [steps]
-  );
+  const orderedSteps = useMemo(() => steps.map((step, index) => normalizeStep(step, index)), [steps]);
 
   function toggleProfile(profileId: string) {
     setSelectedProfileIds((prev) =>
-      prev.includes(profileId)
-        ? prev.filter((id) => id !== profileId)
-        : [...prev, profileId]
+      prev.includes(profileId) ? prev.filter((id) => id !== profileId) : [...prev, profileId]
     );
   }
 
@@ -145,153 +154,142 @@ export default function CampaignDetailPage() {
 
   if (!campaign) {
     return (
-      <main className="mx-auto max-w-6xl p-6">
-        <p className="text-sm text-slate-500">Campaign not found or still loading.</p>
-      </main>
+      <Box sx={{ p: 4 }}>
+        <Typography variant="body2" color="text.secondary">
+          Campaign not found or still loading.
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <Link href="/campaigns" className="text-xs text-slate-500 hover:text-slate-700">
+    <Box sx={{ p: 4 }} data-animate="page">
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3} spacing={2}>
+        <Box>
+          <Button component={Link} href="/campaigns" variant="text" sx={{ px: 0, mb: 0.5 }}>
             Back to campaigns
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-900">{campaign.name}</h1>
-          <p className="text-sm text-slate-500">{campaign.description || 'No description'}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+          </Button>
+          <Typography variant="h4" fontWeight={600}>
+            {campaign.name}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {campaign.description || 'No description'}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1} alignItems="center">
           <CampaignStatusBadge status={campaign.status} />
-          <button
-            type="button"
-            onClick={() => startCampaign(campaign.id).catch(() => undefined)}
-            className="rounded-md border border-emerald-500/40 px-2.5 py-1 text-xs text-emerald-200 hover:bg-emerald-500/20"
-          >
+          <Button size="small" color="success" variant="outlined" onClick={() => startCampaign(campaign.id).catch(() => undefined)}>
             Activate
-          </button>
-          <button
-            type="button"
-            onClick={() => stopCampaign(campaign.id).catch(() => undefined)}
-            className="rounded-md border border-amber-500/40 px-2.5 py-1 text-xs text-amber-200 hover:bg-amber-500/20"
-          >
+          </Button>
+          <Button size="small" color="warning" variant="outlined" onClick={() => stopCampaign(campaign.id).catch(() => undefined)}>
             Pause
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            size="small"
+            color="inherit"
+            variant="outlined"
             onClick={() => updateCampaign(campaign.id, { status: 'archived' }).catch(() => undefined)}
-            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100"
           >
             Archive
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Stack>
+      </Stack>
 
-      {error && <p className="text-sm text-rose-300">{error}</p>}
-      {message && <p className="text-sm text-emerald-300">{message}</p>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {message && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {message}
+        </Alert>
+      )}
 
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">Step Builder</h2>
-          <button
-            type="button"
-            onClick={() => addStep('visit_profile')}
-            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100"
-          >
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+          <Typography variant="h6">Step Builder</Typography>
+          <Button variant="outlined" onClick={() => addStep('visit_profile')}>
             Add Step
-          </button>
-        </div>
+          </Button>
+        </Stack>
 
-        <div className="space-y-2">
+        <Stack spacing={1.5}>
           {orderedSteps.map((step, index) => (
-            <div key={step.id} className="space-y-1">
+            <Box key={step.id}>
               <CampaignStepEditor
                 step={step}
                 onChange={(updated) => updateStep(index, updated)}
                 onDelete={orderedSteps.length > 1 ? () => removeStep(index) : undefined}
               />
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => moveStep(index, index - 1)}
-                  className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-100"
-                >
+              <Stack direction="row" spacing={1} mt={1}>
+                <Button size="small" variant="text" onClick={() => moveStep(index, index - 1)}>
                   Move Up
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveStep(index, index + 1)}
-                  className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-100"
-                >
+                </Button>
+                <Button size="small" variant="text" onClick={() => moveStep(index, index + 1)}>
                   Move Down
-                </button>
-              </div>
-            </div>
+                </Button>
+              </Stack>
+            </Box>
           ))}
-        </div>
-      </section>
+        </Stack>
+      </Paper>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <h2 className="text-sm font-semibold text-slate-900">Attached Profiles</h2>
-          <div className="mt-2 max-h-64 space-y-1 overflow-auto">
+      <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2}>
+        <Paper sx={{ p: 3, flex: 1 }}>
+          <Typography variant="h6" mb={1.5}>
+            Attached Profiles
+          </Typography>
+          <Stack spacing={1}>
             {profiles.map((profile) => (
-              <label key={profile.id} className="flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={selectedProfileIds.includes(profile.id)}
-                  onChange={() => toggleProfile(profile.id)}
-                />
-                <span className="truncate">{profile.name}</span>
-              </label>
+              <Box key={profile.id}>
+                <Stack direction="row" alignItems="center">
+                  <Checkbox checked={selectedProfileIds.includes(profile.id)} onChange={() => toggleProfile(profile.id)} />
+                  <Typography variant="body2">{profile.name}</Typography>
+                </Stack>
+              </Box>
             ))}
             {!profiles.length && (
-              <p className="text-xs text-slate-500">No profiles found.</p>
+              <Typography variant="body2" color="text.secondary">
+                No profiles found.
+              </Typography>
             )}
-          </div>
-        </div>
+          </Stack>
+        </Paper>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Execution Settings</h2>
+        <Paper sx={{ p: 3, flex: 1 }}>
+          <Typography variant="h6" mb={1.5}>
+            Execution Settings
+          </Typography>
 
-          <label className="block text-xs text-slate-600">
-            Lead Folder
-            <select
-              value={selectedFolderId}
-              onChange={(event) => setSelectedFolderId(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-900"
-            >
-              <option value="">None</option>
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Lead Source Folder</InputLabel>
+            <Select value={selectedFolderId} label="Lead Source Folder" onChange={(event) => setSelectedFolderId(String(event.target.value))}>
+              <MenuItem value="">None</MenuItem>
               {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
+                <MenuItem key={folder.id} value={folder.id}>
                   {folder.name}
-                </option>
+                </MenuItem>
               ))}
-            </select>
-          </label>
+            </Select>
+          </FormControl>
 
-          <label className="block text-xs text-slate-600">
-            Daily New Leads: <span className="font-semibold">{dailyNewLeads}</span>
-            <input
-              type="range"
-              min={1}
-              max={100}
-              value={dailyNewLeads}
-              onChange={(event) => setDailyNewLeads(Number(event.target.value))}
-              className="mt-2 w-full"
-            />
-          </label>
+          <Typography variant="body2" color="text.secondary" mb={1}>
+            Daily New Leads: <strong>{dailyNewLeads}</strong>
+          </Typography>
+          <Slider
+            min={1}
+            max={100}
+            value={dailyNewLeads}
+            onChange={(_, value) => setDailyNewLeads(Array.isArray(value) ? value[0] : value)}
+            sx={{ mb: 2 }}
+          />
 
-          <button
-            type="button"
-            onClick={() => saveCampaign().catch(() => undefined)}
-            disabled={isSaving}
-            className="rounded-md border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
-          >
+          <Button type="button" variant="contained" onClick={() => saveCampaign().catch(() => undefined)} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save Campaign'}
-          </button>
-        </div>
-      </section>
-    </main>
+          </Button>
+        </Paper>
+      </Stack>
+    </Box>
   );
 }

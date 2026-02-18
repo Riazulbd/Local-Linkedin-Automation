@@ -6,8 +6,15 @@ function resolveSecret(): string {
   const primary = process.env.ENCRYPTION_SECRET?.trim();
   if (primary) return primary;
 
-  const fallback = process.env.CREDENTIAL_ENCRYPTION_KEY?.trim();
-  if (fallback) return fallback;
+  const legacy = process.env.CREDENTIAL_ENCRYPTION_KEY?.trim();
+  if (legacy) return legacy;
+
+  // Backward compatibility: many local setups only define Bun secrets.
+  const serverSecret = process.env.BUN_SERVER_SECRET?.trim();
+  if (serverSecret) return serverSecret;
+
+  const bunSecret = process.env.BUN_SECRET?.trim();
+  if (bunSecret) return bunSecret;
 
   return '';
 }
@@ -16,7 +23,9 @@ function getKey(): Buffer {
   const secret = resolveSecret();
 
   if (!secret) {
-    throw new Error('Encryption secret is not configured (set ENCRYPTION_SECRET or CREDENTIAL_ENCRYPTION_KEY)');
+    throw new Error(
+      'Encryption secret is not configured (set ENCRYPTION_SECRET, CREDENTIAL_ENCRYPTION_KEY, BUN_SERVER_SECRET, or BUN_SECRET)'
+    );
   }
 
   return createHash('sha256').update(secret).digest();

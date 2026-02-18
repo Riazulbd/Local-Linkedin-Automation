@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import { CampaignBuilder } from '@/components/campaigns/CampaignBuilder';
 import { useCampaignContext } from '@/lib/context/CampaignContext';
 
@@ -9,11 +10,20 @@ export default function NewCampaignPage() {
   const { createCampaign } = useCampaignContext();
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Create Campaign</h1>
-        <p className="text-sm text-slate-500">Define sequence steps, folders, and profile mappings.</p>
-      </div>
+    <Box sx={{ p: 4 }}>
+      <Stack spacing={0} mb={3}>
+        <Typography variant="h4" fontWeight={600}>
+          Create Campaign
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Define sequence steps, target folder, and profile mappings.
+        </Typography>
+        <Stack direction="row" spacing={1.5} mt={1.5}>
+          <Button variant="outlined" onClick={() => router.push('/workflows')}>
+            Open Flow Builder
+          </Button>
+        </Stack>
+      </Stack>
 
       <CampaignBuilder
         onSubmit={async (input) => {
@@ -21,6 +31,6 @@ export default function NewCampaignPage() {
           router.push(`/campaigns/${campaign.id}`);
         }}
       />
-    </main>
+    </Box>
   );
 }

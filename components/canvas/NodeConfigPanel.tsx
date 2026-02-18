@@ -1,7 +1,16 @@
 'use client';
 
-import { Trash2 } from 'lucide-react';
+import { DeleteOutlineRounded } from '@mui/icons-material';
 import type { Node } from 'reactflow';
+import {
+  Box,
+  Button,
+  FormControlLabel,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
+} from '@mui/material';
 import type { NodeData } from '@/types';
 
 type ConfigNodeData = NodeData & {
@@ -15,75 +24,55 @@ interface NodeConfigPanelProps {
   onDelete: () => void;
 }
 
-function TextInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-xs text-text-muted">
-      {label}
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="rounded-md border border-border bg-bg-base px-2.5 py-2 text-xs text-text-primary outline-none transition focus:border-accent"
-      />
-    </label>
-  );
-}
-
 export function NodeConfigPanel({ node, onUpdate, onDelete }: NodeConfigPanelProps) {
   if (!node) {
     return (
-      <aside className="h-full border-l border-border bg-bg-surface p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">Node Config</h2>
-        <p className="mt-3 text-sm text-text-faint">Select a node to edit action settings.</p>
-      </aside>
+      <Box sx={{ height: '100%', borderLeft: 1, borderColor: 'divider', p: 2.5 }}>
+        <Typography variant="subtitle2">Node Config</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Select a node to edit action settings.
+        </Typography>
+      </Box>
     );
   }
 
   const data = node.data;
 
   return (
-    <aside className="h-full overflow-y-auto border-l border-border bg-bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">Node Config</h2>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-bg-elevated px-2 py-1 text-[11px] text-text-muted transition hover:border-red-500/50 hover:text-red-400"
-        >
-          <Trash2 className="h-3 w-3" />
+    <Box sx={{ height: '100%', overflowY: 'auto', borderLeft: 1, borderColor: 'divider', p: 2.5 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="subtitle2">Node Config</Typography>
+        <Button color="error" size="small" startIcon={<DeleteOutlineRounded />} onClick={onDelete}>
           Delete
-        </button>
-      </div>
+        </Button>
+      </Stack>
 
-      <div className="mt-4 space-y-3">
-        <TextInput label="Label" value={data.label ?? ''} onChange={(value) => onUpdate({ label: value })} />
+      <Stack spacing={2} sx={{ mt: 2 }}>
+        <TextField
+          label="Label"
+          size="small"
+          value={data.label ?? ''}
+          onChange={(event) => onUpdate({ label: event.target.value })}
+        />
 
         {node.type === 'visit_profile' && (
           <>
-            <label className="flex items-center gap-2 text-xs text-text-muted">
-              <input
-                type="checkbox"
-                checked={Boolean(data.useCurrentLead)}
-                onChange={(event) => onUpdate({ useCurrentLead: event.target.checked })}
-                className="h-3.5 w-3.5 rounded border-border bg-bg-base"
-              />
-              Use current lead LinkedIn URL
-            </label>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={Boolean(data.useCurrentLead)}
+                  onChange={(event) => onUpdate({ useCurrentLead: event.target.checked })}
+                />
+              }
+              label="Use current lead URL"
+            />
             {!data.useCurrentLead && (
-              <TextInput
+              <TextField
                 label="Profile URL"
+                size="small"
                 value={data.url ?? ''}
-                onChange={(value) => onUpdate({ url: value })}
+                onChange={(event) => onUpdate({ url: event.target.value })}
                 placeholder="https://www.linkedin.com/in/..."
               />
             )}
@@ -91,73 +80,77 @@ export function NodeConfigPanel({ node, onUpdate, onDelete }: NodeConfigPanelPro
         )}
 
         {node.type === 'send_message' && (
-          <label className="flex flex-col gap-1 text-xs text-text-muted">
-            Message Template
-            <textarea
-              value={data.messageTemplate ?? ''}
-              onChange={(event) => onUpdate({ messageTemplate: event.target.value })}
-              rows={8}
-              placeholder="Hi {{firstName}}, great to connect..."
-              className="mono rounded-md border border-border bg-bg-base px-2.5 py-2 text-xs text-text-primary outline-none transition focus:border-accent"
-            />
-          </label>
+          <TextField
+            label="Message Template"
+            value={data.messageTemplate ?? ''}
+            onChange={(event) => onUpdate({ messageTemplate: event.target.value })}
+            rows={8}
+            multiline
+          />
         )}
 
         {node.type === 'send_connection' && (
-          <label className="flex flex-col gap-1 text-xs text-text-muted">
-            Connection Note
-            <textarea
-              value={data.connectionNote ?? ''}
-              onChange={(event) => onUpdate({ connectionNote: event.target.value })}
-              rows={5}
-              placeholder="Optional invitation note"
-              className="mono rounded-md border border-border bg-bg-base px-2.5 py-2 text-xs text-text-primary outline-none transition focus:border-accent"
-            />
-          </label>
+          <TextField
+            label="Connection Note"
+            value={data.connectionNote ?? ''}
+            onChange={(event) => onUpdate({ connectionNote: event.target.value })}
+            rows={5}
+            multiline
+          />
         )}
 
         {node.type === 'follow_profile' && (
-          <label className="flex items-center gap-2 text-xs text-text-muted">
-            <input
-              type="checkbox"
-              checked={data.fallbackToConnect !== false}
-              onChange={(event) => onUpdate({ fallbackToConnect: event.target.checked })}
-              className="h-3.5 w-3.5 rounded border-border bg-bg-base"
-            />
-            Fallback to connect if follow unavailable
-          </label>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={data.fallbackToConnect !== false}
+                onChange={(event) => onUpdate({ fallbackToConnect: event.target.checked })}
+              />
+            }
+            label="Fallback to connect if follow unavailable"
+          />
         )}
 
         {node.type === 'wait_delay' && (
           <>
-            <label className="flex items-center gap-2 text-xs text-text-muted">
-              <input
-                type="checkbox"
-                checked={Boolean(data.useRandomRange)}
-                onChange={(event) => onUpdate({ useRandomRange: event.target.checked })}
-                className="h-3.5 w-3.5 rounded border-border bg-bg-base"
-              />
-              Use random range
-            </label>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={Boolean(data.useRandomRange)}
+                  onChange={(event) => onUpdate({ useRandomRange: event.target.checked })}
+                />
+              }
+              label="Use random range"
+            />
 
             {data.useRandomRange ? (
-              <div className="grid grid-cols-2 gap-2">
-                <TextInput
-                  label="Min seconds"
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  label="Min Seconds"
+                  size="small"
+                  type="number"
                   value={String(data.minSeconds ?? 3)}
-                  onChange={(value) => onUpdate({ minSeconds: Number(value) || 0 })}
+                  onChange={(event) => onUpdate({ minSeconds: Number(event.target.value) || 0 })}
+                  fullWidth
                 />
-                <TextInput
-                  label="Max seconds"
+                <TextField
+                  label="Max Seconds"
+                  size="small"
+                  type="number"
                   value={String(data.maxSeconds ?? 10)}
-                  onChange={(value) => onUpdate({ maxSeconds: Number(value) || 0 })}
+                  onChange={(event) => onUpdate({ maxSeconds: Number(event.target.value) || 0 })}
+                  fullWidth
                 />
-              </div>
+              </Stack>
             ) : (
-              <TextInput
+              <TextField
                 label="Seconds"
+                size="small"
+                type="number"
                 value={String(data.seconds ?? 5)}
-                onChange={(value) => onUpdate({ seconds: Number(value) || 0 })}
+                onChange={(event) => onUpdate({ seconds: Number(event.target.value) || 0 })}
               />
             )}
           </>
@@ -165,21 +158,23 @@ export function NodeConfigPanel({ node, onUpdate, onDelete }: NodeConfigPanelPro
 
         {node.type === 'if_condition' && (
           <>
-            <TextInput
+            <TextField
               label="Condition"
+              size="small"
               value={data.condition ?? 'connection_status'}
-              onChange={(value) => onUpdate({ condition: value })}
+              onChange={(event) => onUpdate({ condition: event.target.value })}
               placeholder="connection_status"
             />
-            <TextInput
+            <TextField
               label="Condition Value"
+              size="small"
               value={data.conditionValue ?? ''}
-              onChange={(value) => onUpdate({ conditionValue: value })}
+              onChange={(event) => onUpdate({ conditionValue: event.target.value })}
               placeholder="connected"
             />
           </>
         )}
-      </div>
-    </aside>
+      </Stack>
+    </Box>
   );
 }

@@ -1,5 +1,5 @@
 import type { Page } from 'playwright';
-import { ensureLoggedIn } from './actions/linkedinLogin';
+import { ensureLoggedIn, type EnsureLoginOptions } from './actions/linkedinLogin';
 import { encryptCredential } from './helpers/crypto';
 import { supabase } from '../lib/supabase';
 import { browserSessionManager } from './BrowserSessionManager';
@@ -38,7 +38,7 @@ export class LoginManager {
     };
   }
 
-  async login({ profileId, email, password }: LoginInput) {
+  async login({ profileId, email, password }: LoginInput, options: EnsureLoginOptions = {}) {
     const profile = await this.getProfileRef(profileId);
     if (!profile || !profile.adspower_profile_id) {
       throw new Error('Profile not found or AdsPower profile ID is missing');
@@ -58,7 +58,7 @@ export class LoginManager {
 
     try {
       const page = await browserSessionManager.getSession(profileId, profile.adspower_profile_id);
-      const outcome = await ensureLoggedIn(page, profileId, profile.adspower_profile_id);
+      const outcome = await ensureLoggedIn(page, profileId, profile.adspower_profile_id, options);
 
       if (outcome === '2fa_required') {
         this.pendingStates.set(profileId, 'awaiting_2fa');
@@ -81,12 +81,13 @@ export class LoginManager {
   async loginProfile(
     profileId: string,
     adspowerProfileId: string,
-    page: Page
+    page: Page,
+    options: EnsureLoginOptions = {}
   ): Promise<'success' | 'already_logged_in' | 'failed' | 'requires_2fa'> {
     this.pendingStates.set(profileId, 'running');
 
     try {
-      const outcome = await ensureLoggedIn(page, profileId, adspowerProfileId);
+      const outcome = await ensureLoggedIn(page, profileId, adspowerProfileId, options);
 
       if (outcome === 'already_logged_in') {
         this.pendingStates.set(profileId, 'idle');

@@ -1,7 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import Papa from 'papaparse';
+import {
+  Alert,
+  Box,
+  Button,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import type { ColumnMapping, CSVLeadRow } from '@/types';
 import { CSVImportMapper } from '@/components/leads-folders/CSVImportMapper';
 import { useProfileStore } from '@/store/profileStore';
@@ -28,19 +38,19 @@ export default function LeadImportPage() {
         const parsed = (result.data as Record<string, string>[]).map((row) => row as CSVLeadRow);
         setRows(parsed);
       },
-      error: (err) => {
-        setError(err.message);
+      error: (parseError) => {
+        setError(parseError.message);
       },
     });
   }
 
   async function uploadMappedRows() {
     if (!selectedProfile?.id) {
-      setError('Select a profile before importing leads');
+      setError('Select a profile before importing leads.');
       return;
     }
     if (!rows.length) {
-      setError('Upload a CSV first');
+      setError('Upload a CSV file first.');
       return;
     }
 
@@ -64,7 +74,7 @@ export default function LeadImportPage() {
       }));
 
     if (!leads.length) {
-      setError('No valid LinkedIn profile URLs found after mapping');
+      setError('No valid LinkedIn profile URLs found after mapping.');
       return;
     }
 
@@ -81,53 +91,77 @@ export default function LeadImportPage() {
           leads,
         }),
       });
-      const payload = await response.json();
+      const payload = (await response.json().catch(() => ({}))) as { inserted?: number; error?: string };
       if (!response.ok) throw new Error(payload.error || 'Failed to upload leads');
-      setMessage(`Uploaded ${payload.inserted} leads.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload leads');
+      setMessage(`Uploaded ${payload.inserted ?? leads.length} leads.`);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Failed to upload leads');
     } finally {
       setIsUploading(false);
     }
   }
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">CSV Lead Import</h1>
-        <p className="text-sm text-slate-500">
-          Parse CSV, map columns, and bulk upload leads into selected profile.
-        </p>
-      </div>
+    <Box sx={{ p: 4, maxWidth: 1100 }} data-animate="page">
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={4}>
+        <Box>
+          <Typography variant="h4" fontWeight={600}>
+            CSV Lead Import
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Parse CSV, map columns, and bulk upload leads into the selected profile.
+          </Typography>
+        </Box>
+        <Button component={Link} href="/leads" variant="outlined">
+          Back to Leads
+        </Button>
+      </Stack>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <label className="text-xs text-slate-600">
-          CSV File
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onFileSelected(file);
-            }}
-            className="mt-1 block text-xs text-slate-700"
-          />
-        </label>
-      </div>
+      {!selectedProfile?.id && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          Select a profile from the profile selector before importing leads.
+        </Alert>
+      )}
+      {selectedProfile?.id && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Import target profile: <strong>{selectedProfile.name}</strong>
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+      {message && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          {message}
+        </Alert>
+      )}
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <TextField
+          type="file"
+          inputProps={{ accept: '.csv,text/csv' }}
+          onChange={(event) => {
+            const file = (event.currentTarget as HTMLInputElement).files?.[0];
+            if (file) onFileSelected(file);
+          }}
+          fullWidth
+          helperText="Choose a CSV file with LinkedIn profile URL columns."
+        />
+      </Paper>
 
       <CSVImportMapper rows={previewRows} onChange={setMapping} />
 
-      <button
-        type="button"
-        onClick={uploadMappedRows}
-        disabled={isUploading}
-        className="rounded-md border border-cyan-400/40 px-3 py-1.5 text-sm text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
-      >
-        {isUploading ? 'Uploading...' : 'Upload Leads'}
-      </button>
-
-      {message && <p className="text-sm text-emerald-300">{message}</p>}
-      {error && <p className="text-sm text-rose-300">{error}</p>}
-    </main>
+      <Stack direction="row" justifyContent="flex-end" mt={3}>
+        <Button
+          variant="contained"
+          onClick={() => uploadMappedRows().catch(() => undefined)}
+          disabled={isUploading || !rows.length}
+        >
+          {isUploading ? 'Uploading...' : 'Upload Leads'}
+        </Button>
+      </Stack>
+    </Box>
   );
 }

@@ -17,7 +17,22 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { Save, Plus } from 'lucide-react';
+import {
+  AddCircleOutlineRounded,
+  SaveRounded,
+} from '@mui/icons-material';
+import {
+  Alert,
+  Box,
+  Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import Link from 'next/link';
 import { NodePalette } from './NodePalette';
 import { NodeConfigPanel } from './NodeConfigPanel';
@@ -496,76 +511,105 @@ function WorkflowCanvasInner() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-text-muted">Loading workflow canvas...</div>
+      <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography variant="body2" color="text.secondary">
+          Loading workflow canvas...
+        </Typography>
+      </Box>
     );
   }
 
   if (!selectedProfile) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-text-muted">
-        <p>Select a profile to load its workflow canvas.</p>
+      <Box
+        sx={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 2,
+          p: 3,
+        }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          Select a profile to load its workflow canvas.
+        </Typography>
         {profileLoadError && (
-          <p className="max-w-xl text-center text-xs text-red-300">
+          <Alert severity="error" sx={{ maxWidth: 560 }}>
             Profile loading failed: {profileLoadError}
-          </p>
+          </Alert>
         )}
-        <Link
-          href="/settings/profiles"
-          className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-primary transition hover:bg-bg-base"
-        >
+        <Button component={Link} href="/settings/profiles" variant="outlined">
           Create or Manage Profiles
-        </Link>
-      </div>
+        </Button>
+      </Box>
     );
   }
 
   return (
-    <div className="h-full overflow-hidden">
-      <div className="flex h-12 items-center justify-between border-b border-border bg-bg-surface px-3">
-        <div className="flex items-center gap-2">
-          <select
-            value={activeWorkflowId ?? ''}
-            onChange={(event) => handleSelectWorkflow(event.target.value)}
-            className="rounded-md border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent"
-          >
-            {workflows.map((workflow) => (
-              <option key={workflow.id} value={workflow.id}>
-                {workflow.name}
-              </option>
-            ))}
-          </select>
-          <input
+    <Box sx={{ height: '100%', overflow: 'hidden' }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel>Workflow</InputLabel>
+            <Select
+              value={activeWorkflowId ?? ''}
+              label="Workflow"
+              onChange={(event) => handleSelectWorkflow(String(event.target.value))}
+              disabled={!workflows.length}
+            >
+              {workflows.map((workflow) => (
+                <MenuItem key={workflow.id} value={workflow.id}>
+                  {workflow.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            size="small"
             value={workflowName}
             onChange={(event) => setWorkflowName(event.target.value)}
-            className="rounded-md border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent"
+            sx={{ minWidth: 240 }}
+            placeholder="Workflow name"
           />
-          <button
-            type="button"
-            onClick={handleCreateWorkflow}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text-primary transition hover:bg-bg-base"
-          >
-            <Plus className="h-3.5 w-3.5" />
+          <Button type="button" onClick={handleCreateWorkflow} variant="outlined" startIcon={<AddCircleOutlineRounded />}>
             New
-          </button>
-        </div>
+          </Button>
+        </Stack>
 
-        <button
+        <Button
           type="button"
           onClick={handleSave}
           disabled={isSaving || !activeWorkflowId}
-          className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          variant="contained"
+          startIcon={<SaveRounded />}
         >
-          <Save className="h-3.5 w-3.5" />
           {isSaving ? 'Saving...' : 'Save Workflow'}
-        </button>
-      </div>
+        </Button>
+      </Stack>
 
-      <div className="grid h-[calc(100%-3rem)] grid-cols-1 md:grid-cols-[220px_1fr_280px]">
+      <Box
+        sx={{
+          height: 'calc(100% - 56px)',
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: '220px 1fr 300px' },
+        }}
+      >
         <NodePalette />
 
-        <div
+        <Box
           ref={flowWrapperRef}
-          className="h-full min-h-[380px] bg-[linear-gradient(to_bottom_right,rgba(0,119,181,0.08),transparent_55%)]"
+          sx={{
+            minHeight: 380,
+            background:
+              'linear-gradient(to bottom right, rgba(59,130,246,0.1), rgba(15,23,42,0.92) 55%)',
+          }}
           onDrop={onDrop}
           onDragOver={onDragOver}
         >
@@ -596,11 +640,11 @@ function WorkflowCanvasInner() {
               }}
             />
           </ReactFlow>
-        </div>
+        </Box>
 
         <NodeConfigPanel node={selectedNode} onUpdate={updateSelectedNodeData} onDelete={deleteSelectedNode} />
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 

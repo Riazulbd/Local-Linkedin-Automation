@@ -9,7 +9,8 @@ services:
       - .env.local
     environment:
       NODE_ENV: production
-      HEADLESS: ${HEADLESS:-false}
+      HEADLESS: ${HEADLESS:-true}
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
       ADSPOWER_BASE_URL: ${ADSPOWER_BASE_URL:-http://host.docker.internal:50325}
       ADSPOWER_WS_HOST: ${ADSPOWER_WS_HOST:-host.docker.internal}
       ADSPOWER_CONNECT_TIMEOUT_MS: ${ADSPOWER_CONNECT_TIMEOUT_MS:-10000}
@@ -31,8 +32,8 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
     ports:
       - "3000:3000"
     env_file:
@@ -40,6 +41,12 @@ services:
     environment:
       NODE_ENV: production
       BUN_SERVER_URL: http://backend:3001
+      NEXT_PUBLIC_BUN_SERVER_URL: http://localhost:3001
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       backend:
         condition: service_healthy

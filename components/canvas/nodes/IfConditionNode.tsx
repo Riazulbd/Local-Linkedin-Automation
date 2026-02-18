@@ -15,7 +15,7 @@ export function IfConditionNode({ data }: NodeProps<IfNodeData>) {
   return (
     <BaseNode
       title="If Condition"
-      icon={<GitBranchPlus className="h-3.5 w-3.5" />}
+      icon={<GitBranchPlus size={14} />}
       description={data.condition || 'Uses default condition'}
       status={data.status}
       highlighted={data.highlighted}
@@ -25,17 +25,15 @@ export function IfConditionNode({ data }: NodeProps<IfNodeData>) {
         id="yes"
         type="source"
         position={Position.Right}
-        style={{ top: '38%' }}
-        className="!h-2.5 !w-2.5 !border !border-bg-surface !bg-green-500"
+        style={{ top: '38%', width: 10, height: 10, border: '1px solid #1e293b', background: '#34d399' }}
       />
       <Handle
         id="no"
         type="source"
         position={Position.Right}
-        style={{ top: '70%' }}
-        className="!h-2.5 !w-2.5 !border !border-bg-surface !bg-red-500"
+        style={{ top: '70%', width: 10, height: 10, border: '1px solid #1e293b', background: '#f87171' }}
       />
-      <div className="mt-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-text-faint">
+      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, color: '#94a3b8' }}>
         <span>yes</span>
         <span>no</span>
       </div>

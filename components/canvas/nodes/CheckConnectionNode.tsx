@@ -14,7 +14,7 @@ export function CheckConnectionNode({ data }: NodeProps<CheckNodeData>) {
   return (
     <BaseNode
       title="Check Connection"
-      icon={<SearchCheck className="h-3.5 w-3.5" />}
+      icon={<SearchCheck size={14} />}
       description="Checks connected / following / pending state"
       status={data.status}
       highlighted={data.highlighted}

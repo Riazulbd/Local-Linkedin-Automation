@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Lead, CreateLeadInput, LeadStatus } from '@/types';
+import type { CreateLeadInput, Lead, LeadStatus, UpdateLeadInput } from '@/types';
 
 interface LeadQueryFilters {
   profileId?: string;
@@ -39,6 +39,31 @@ export async function createLead(
   const { data, error } = await supabase.from('leads').insert(input).select('*').single();
   if (error) throw new Error(error.message);
   return data as Lead;
+}
+
+export async function updateLead(
+  supabase: SupabaseClient,
+  id: string,
+  input: UpdateLeadInput
+): Promise<Lead> {
+  const { data, error } = await supabase
+    .from('leads')
+    .update({
+      ...input,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as Lead;
+}
+
+export async function deleteLeadById(supabase: SupabaseClient, id: string): Promise<Lead | null> {
+  const { data, error } = await supabase.from('leads').delete().eq('id', id).select('*').maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as Lead | null) ?? null;
 }
 
 export async function getLeadsByProfile(

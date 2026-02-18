@@ -84,10 +84,30 @@ export async function findVisibleButton(
   selectors: string[] | readonly string[],
   timeoutMs = 2000
 ): Promise<{ locator: import('playwright').Locator; selectorUsed: string } | null> {
+  const maxCandidatesPerSelector = 30;
+
   for (const sel of selectors) {
     try {
-      const locator = page.locator(sel).first();
-      if (await locator.isVisible({ timeout: timeoutMs })) {
+      const root = page.locator(sel);
+      const count = Math.min(await root.count(), maxCandidatesPerSelector);
+      if (count === 0) {
+        continue;
+      }
+
+      for (let idx = 0; idx < count; idx += 1) {
+        const locator = root.nth(idx);
+        const candidateTimeout = idx === 0 ? timeoutMs : 300;
+
+        if (!(await locator.isVisible({ timeout: candidateTimeout }))) {
+          continue;
+        }
+
+        const disabled = await locator.getAttribute('disabled').catch(() => null);
+        const ariaDisabled = await locator.getAttribute('aria-disabled').catch(() => null);
+        if (disabled !== null || ariaDisabled === 'true') {
+          continue;
+        }
+
         return { locator, selectorUsed: sel };
       }
     } catch {

@@ -2,6 +2,21 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import {
+  Alert,
+  Box,
+  Card,
+  CardContent,
+  Grid,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material';
 import type { CampaignLeadProgress } from '@/types';
 
 export default function CampaignAnalyticsPage() {
@@ -22,13 +37,13 @@ export default function CampaignAnalyticsPage() {
         if (!response.ok) throw new Error(payload.error || 'Failed to load analytics');
         if (!mounted) return;
         setProgress((payload.progress ?? []) as CampaignLeadProgress[]);
-      } catch (err) {
+      } catch (fetchError) {
         if (!mounted) return;
-        setError(err instanceof Error ? err.message : 'Failed to load analytics');
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load analytics');
       }
     }
 
-    fetchData().catch(() => undefined);
+    void fetchData();
     return () => {
       mounted = false;
     };
@@ -44,52 +59,76 @@ export default function CampaignAnalyticsPage() {
   }, [progress]);
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <h1 className="text-xl font-semibold text-slate-900">Campaign Analytics</h1>
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+    <Box sx={{ p: 4 }} data-animate="page">
+      <Typography variant="h4" fontWeight={600} mb={3}>
+        Campaign Analytics
+      </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <MetricCard label="Total Leads" value={metrics.total} />
-        <MetricCard label="Completed" value={metrics.completed} />
-        <MetricCard label="Failed" value={metrics.failed} />
-        <MetricCard label="Waiting" value={metrics.waiting} />
-        <MetricCard label="Completion %" value={metrics.completionRate} />
-      </div>
+      <Grid container spacing={2} mb={3}>
+        <Grid item xs={12} sm={6} md={3}>
+          <MetricCard label="Total Leads" value={metrics.total} />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <MetricCard label="Completed" value={metrics.completed} />
+        </Grid>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard label="Failed" value={metrics.failed} />
+        </Grid>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard label="Waiting" value={metrics.waiting} />
+        </Grid>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard label="Completion %" value={metrics.completionRate} />
+        </Grid>
+      </Grid>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <h2 className="text-sm font-semibold text-slate-900">Recent Step Results</h2>
-        <div className="mt-2 max-h-72 overflow-auto rounded-md border border-slate-200">
-          <table className="min-w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 text-slate-400">
-              <tr>
-                <th className="px-3 py-2">Lead</th>
-                <th className="px-3 py-2">Step</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Last action</th>
-              </tr>
-            </thead>
-            <tbody>
+      <Paper sx={{ p: 2 }}>
+        <Typography variant="h6" mb={1.5}>
+          Recent Step Results
+        </Typography>
+        <TableContainer sx={{ maxHeight: 400 }}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell>Lead</TableCell>
+                <TableCell>Step</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Last action</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {progress.map((row) => (
-                <tr key={row.id} className="border-t border-slate-200">
-                  <td className="px-3 py-2 font-mono text-[11px]">{row.lead_id.slice(0, 8)}</td>
-                  <td className="px-3 py-2">{row.current_step + 1}</td>
-                  <td className="px-3 py-2">{row.status}</td>
-                  <td className="px-3 py-2">{row.last_action_at ? new Date(row.last_action_at).toLocaleString() : '-'}</td>
-                </tr>
+                <TableRow key={row.id} hover>
+                  <TableCell sx={{ fontFamily: 'var(--font-app-mono), monospace' }}>{row.lead_id.slice(0, 8)}</TableCell>
+                  <TableCell>{row.current_step + 1}</TableCell>
+                  <TableCell>{row.status}</TableCell>
+                  <TableCell>{row.last_action_at ? new Date(row.last_action_at).toLocaleString() : '-'}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </main>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    </Box>
   );
 }
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-100 p-3">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
-    </div>
+    <Card>
+      <CardContent>
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <Typography variant="h5" fontWeight={700} mt={0.5}>
+          {value}
+        </Typography>
+      </CardContent>
+    </Card>
   );
 }

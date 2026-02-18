@@ -515,6 +515,11 @@ export class WorkflowExecutor {
         : null;
     const usePersistentSession = Boolean(profileContext?.adspowerProfileId);
     let usedLocalBrowserForTest = !usePersistentSession;
+    const testTwoFactorTimeoutMs = (() => {
+      const parsed = Number(process.env.TEST_LOGIN_2FA_TIMEOUT_MS || 90000);
+      if (!Number.isFinite(parsed) || parsed <= 0) return 90000;
+      return Math.floor(parsed);
+    })();
 
     try {
       await this.log(null, 'test_init', 'test', 'running', `Starting test for ${resolvedNodeType}...`, {}, isTest);
@@ -563,7 +568,8 @@ export class WorkflowExecutor {
         const healed = await this.sessionHealer.healSession(
           profileContext.id,
           profileContext.adspowerProfileId || '',
-          page
+          page,
+          { twoFactorTimeoutMs: testTwoFactorTimeoutMs }
         );
         if (!healed) {
           if (usedLocalBrowserForTest) {

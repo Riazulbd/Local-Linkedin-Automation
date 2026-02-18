@@ -14,7 +14,7 @@ export function LoopLeadsNode({ data }: NodeProps<LoopNodeData>) {
   return (
     <BaseNode
       title="Loop Leads"
-      icon={<RefreshCcw className="h-3.5 w-3.5" />}
+      icon={<RefreshCcw size={14} />}
       description="Entry point: iterates all selected leads"
       status={data.status}
       highlighted={data.highlighted}
