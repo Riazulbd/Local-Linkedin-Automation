@@ -88,7 +88,7 @@ export async function findVisibleButton(
 
   const isGlobalSearchElement = async (locator: import('playwright').Locator): Promise<boolean> => {
     try {
-      return await locator.evaluate((el) => {
+      return await locator.evaluate((el: Element) => {
         const isSearchInput =
           el.matches('input[role="combobox"][aria-label*="Search" i]') ||
           el.matches('input.search-global-typeahead__input') ||

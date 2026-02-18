@@ -92,7 +92,7 @@ async function findVisible(page: Page, selectors: readonly string[], timeoutMs: 
       const visible = await candidate.isVisible({ timeout: timeoutMs }).catch(() => false);
       if (!visible) continue;
       const isSearch = await candidate
-        .evaluate((el) => {
+        .evaluate((el: Element) => {
           const isSearchInput =
             el.matches('input[role="combobox"][aria-label*="Search" i]') ||
             el.matches('input.search-global-typeahead__input') ||

@@ -83,7 +83,7 @@ async function findVisible(
         const visible = await locator.isVisible({ timeout: candidateTimeout }).catch(() => false);
         if (!visible) continue;
         const isSearch = await locator
-          .evaluate((el) => {
+          .evaluate((el: Element) => {
             const isSearchInput =
               el.matches('input[role="combobox"][aria-label*="Search" i]') ||
               el.matches('input.search-global-typeahead__input') ||
