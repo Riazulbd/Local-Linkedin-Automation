@@ -10,6 +10,7 @@ export interface Lead {
   title: string | null;
   folder_id?: string | null;
   notes?: string | null;
+  connection_degree?: '1st' | '2nd' | '3rd' | 'pending' | 'not_connected' | 'unknown' | null;
   extra_data: Record<string, string>;
   status: LeadStatus;
   created_at: string;

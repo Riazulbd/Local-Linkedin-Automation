@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import {
+  Bug,
   Briefcase,
   FileSpreadsheet,
   Inbox,
@@ -35,6 +36,7 @@ const WORKSPACE_NAV: NavItemType[] = [
   { href: '/campaigns', label: 'Campaigns', icon: Briefcase },
   { href: '/unibox', label: 'Unibox', icon: Inbox },
   { href: '/monitor', label: 'Monitor', icon: Monitor },
+  { href: '/test', label: 'Test Lab', icon: Bug },
 ];
 
 const SYSTEM_NAV: NavItemType[] = [
@@ -56,6 +58,7 @@ function navActiveUrlFromPath(pathname: string): string {
   if (pathname.startsWith('/campaigns')) return '/campaigns';
   if (pathname.startsWith('/unibox')) return '/unibox';
   if (pathname.startsWith('/monitor')) return '/monitor';
+  if (pathname.startsWith('/test')) return '/test';
   if (pathname.startsWith('/settings/profiles')) return '/settings/profiles';
   if (pathname.startsWith('/settings/defaults')) return '/settings/defaults';
   if (pathname.startsWith('/settings')) return '/settings';
@@ -77,6 +80,9 @@ function pageMeta(pathname: string): { title: string; subtitle: string } {
   }
   if (pathname.startsWith('/monitor')) {
     return { title: 'Live Monitor', subtitle: 'Watch the active browser session in real time' };
+  }
+  if (pathname.startsWith('/test')) {
+    return { title: 'Test Lab', subtitle: 'Run isolated automation actions with live logs' };
   }
   if (pathname.startsWith('/settings')) {
     return { title: 'Settings', subtitle: 'Profiles, limits, and integration controls' };

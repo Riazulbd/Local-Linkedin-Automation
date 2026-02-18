@@ -94,8 +94,15 @@ export class PlaywrightManager {
         return this.activePage;
       }
 
-      await this.activePage.close().catch(() => undefined);
-      this.activePage = null;
+      await this.activePage
+        .goto('about:blank', {
+          waitUntil: 'domcontentloaded',
+          timeout: 8000,
+        })
+        .catch(() => undefined);
+      await this.closeExtraPages(this.activePage);
+      await this.activePage.bringToFront().catch(() => undefined);
+      return this.activePage;
     }
 
     const pages = this.context!.pages();
@@ -113,16 +120,15 @@ export class PlaywrightManager {
     let selectedPage = usablePages.find((page) => !isAdsPowerStartupPage(page.url()));
 
     if (!selectedPage) {
-      for (const page of usablePages) {
-        if (!isAdsPowerStartupPage(page.url())) continue;
-        const closingUrl = page.url();
-        await page.close().catch(() => undefined);
-        logger.info('Closed AdsPower startup tab before automation', {
-          url: closingUrl,
-        });
+      selectedPage = usablePages[0] ?? (await this.context!.newPage());
+      if (isAdsPowerStartupPage(selectedPage.url())) {
+        await selectedPage
+          .goto('about:blank', {
+            waitUntil: 'domcontentloaded',
+            timeout: 8000,
+          })
+          .catch(() => undefined);
       }
-
-      selectedPage = await this.context!.newPage();
     }
 
     this.activePage = selectedPage;
@@ -455,11 +461,15 @@ export class PlaywrightManager {
     let page = openPages.find((entry) => !isAdsPowerStartupPage(entry.url()));
 
     if (!page) {
-      for (const entry of openPages) {
-        if (!isAdsPowerStartupPage(entry.url())) continue;
-        await entry.close().catch(() => undefined);
+      page = openPages[0] ?? (await context.newPage());
+      if (isAdsPowerStartupPage(page.url())) {
+        await page
+          .goto('about:blank', {
+            waitUntil: 'domcontentloaded',
+            timeout: 8000,
+          })
+          .catch(() => undefined);
       }
-      page = await context.newPage();
     }
 
     staticPageBrowserMap.set(page, browser);

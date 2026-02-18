@@ -1,10 +1,10 @@
-import { PlaywrightManager } from './PlaywrightManager';
 import { syncInbox } from './actions/syncInbox';
-import { ensureLoggedIn } from './actions/linkedinLogin';
 import { replyInInbox } from './actions/replyInInbox';
 import { dismissPopups, safeWaitForSettle } from './helpers/linkedinGuard';
 import { supabase } from '../lib/supabase';
 import { Logger } from '../lib/logger';
+import { browserSessionManager } from './BrowserSessionManager';
+import { SessionHealer } from './SessionHealer';
 
 const INBOX_URL = 'https://www.linkedin.com/messaging/';
 
@@ -34,7 +34,7 @@ interface ThreadRef {
 }
 
 export class UniboxSyncer {
-  private manager = new PlaywrightManager();
+  private sessionHealer = new SessionHealer();
   private syncingProfiles = new Set<string>();
   private lastSyncByProfile = new Map<string, string>();
 
@@ -59,11 +59,10 @@ export class UniboxSyncer {
         throw new Error('LinkedIn profile not found or AdsPower profile is missing');
       }
 
-      const page = await this.manager.getPage({ adspowerProfileId: profile.adspower_profile_id });
-
-      const loginOutcome = await ensureLoggedIn(page, profile.id, profile.adspower_profile_id);
-      if (loginOutcome === '2fa_required' || loginOutcome === 'wrong_credentials' || loginOutcome === 'error') {
-        throw new Error(`LinkedIn login failed before inbox sync (${loginOutcome})`);
+      const page = await browserSessionManager.getSession(profile.id, profile.adspower_profile_id);
+      const healed = await this.sessionHealer.healSession(profile.id, profile.adspower_profile_id, page);
+      if (!healed) {
+        throw new Error('LinkedIn login failed before inbox sync (session healer failed)');
       }
 
       const beforeCounts = await this.getThreadMessageCounts(profile.id);
@@ -89,7 +88,6 @@ export class UniboxSyncer {
       );
       throw error;
     } finally {
-      await this.manager.cleanup().catch(() => undefined);
       this.syncingProfiles.delete(profileId);
     }
   }
@@ -152,10 +150,10 @@ export class UniboxSyncer {
         throw new Error('LinkedIn profile not found or AdsPower profile is missing');
       }
 
-      const page = await this.manager.getPage({ adspowerProfileId: profile.adspower_profile_id });
-      const loginOutcome = await ensureLoggedIn(page, profile.id, profile.adspower_profile_id);
-      if (loginOutcome === '2fa_required' || loginOutcome === 'wrong_credentials' || loginOutcome === 'error') {
-        throw new Error(`LinkedIn login failed before reply (${loginOutcome})`);
+      const page = await browserSessionManager.getSession(profile.id, profile.adspower_profile_id);
+      const healed = await this.sessionHealer.healSession(profile.id, profile.adspower_profile_id, page);
+      if (!healed) {
+        throw new Error('LinkedIn login failed before reply (session healer failed)');
       }
 
       await page.goto(INBOX_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -211,7 +209,6 @@ export class UniboxSyncer {
       );
       throw error;
     } finally {
-      await this.manager.cleanup().catch(() => undefined);
       this.syncingProfiles.delete(resolvedProfileId);
     }
   }

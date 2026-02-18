@@ -1,7 +1,8 @@
-import { PlaywrightManager } from './PlaywrightManager';
+import type { Page } from 'playwright';
 import { ensureLoggedIn } from './actions/linkedinLogin';
 import { encryptCredential } from './helpers/crypto';
 import { supabase } from '../lib/supabase';
+import { browserSessionManager } from './BrowserSessionManager';
 
 interface LoginInput {
   profileId: string;
@@ -20,7 +21,6 @@ interface ProfileLoginRef {
 }
 
 export class LoginManager {
-  private manager = new PlaywrightManager();
   private pendingStates = new Map<string, 'idle' | 'awaiting_2fa' | 'running'>();
 
   getStatus(profileId?: string) {
@@ -57,10 +57,7 @@ export class LoginManager {
     this.pendingStates.set(profileId, 'running');
 
     try {
-      const page = await this.manager.getPage({
-        adspowerProfileId: profile.adspower_profile_id,
-      });
-
+      const page = await browserSessionManager.getSession(profileId, profile.adspower_profile_id);
       const outcome = await ensureLoggedIn(page, profileId, profile.adspower_profile_id);
 
       if (outcome === '2fa_required') {
@@ -78,8 +75,39 @@ export class LoginManager {
     } catch (error) {
       this.pendingStates.set(profileId, 'idle');
       throw error;
-    } finally {
-      await this.manager.cleanup().catch(() => undefined);
+    }
+  }
+
+  async loginProfile(
+    profileId: string,
+    adspowerProfileId: string,
+    page: Page
+  ): Promise<'success' | 'already_logged_in' | 'failed' | 'requires_2fa'> {
+    this.pendingStates.set(profileId, 'running');
+
+    try {
+      const outcome = await ensureLoggedIn(page, profileId, adspowerProfileId);
+
+      if (outcome === 'already_logged_in') {
+        this.pendingStates.set(profileId, 'idle');
+        return 'already_logged_in';
+      }
+
+      if (outcome === 'logged_in') {
+        this.pendingStates.set(profileId, 'idle');
+        return 'success';
+      }
+
+      if (outcome === '2fa_required') {
+        this.pendingStates.set(profileId, 'awaiting_2fa');
+        return 'requires_2fa';
+      }
+
+      this.pendingStates.set(profileId, 'idle');
+      return 'failed';
+    } catch {
+      this.pendingStates.set(profileId, 'idle');
+      return 'failed';
     }
   }
 

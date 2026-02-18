@@ -1,10 +1,11 @@
 export type RunStatus = 'running' | 'completed' | 'stopped' | 'failed';
-export type LogStatus = 'running' | 'success' | 'error' | 'skipped';
+export type LogStatus = 'running' | 'success' | 'error' | 'skipped' | 'info';
 
 export interface ExecutionRun {
   id: string;
   profile_id: string;
   workflow_id: string | null;
+  campaign_id?: string | null;
   status: RunStatus;
   leads_total: number;
   leads_completed: number;
@@ -22,6 +23,7 @@ export interface ExecutionLog {
   status: LogStatus;
   message: string | null;
   result_data: Record<string, unknown>;
+  is_test?: boolean;
   created_at: string;
 }
 

@@ -82,8 +82,7 @@ export function TestRunner() {
     setIsRunning(true);
     setLogs([]);
     setLastResult(null);
-    const newTestRunId = `test_${Date.now()}`;
-    setTestRunId(newTestRunId);
+    setTestRunId(null);
 
     try {
       const response = await fetch('/api/automation/test', {
@@ -98,6 +97,9 @@ export function TestRunner() {
       });
 
       const result = await response.json();
+      if (result?.runId) {
+        setTestRunId(result.runId);
+      }
       setLastResult(result);
     } catch (error) {
       console.error('Test run failed:', error);

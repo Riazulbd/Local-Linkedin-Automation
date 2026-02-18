@@ -5,12 +5,14 @@ import { followProfile } from './actions/followProfile';
 import { sendMessage } from './actions/sendMessage';
 import { sendConnection } from './actions/sendConnection';
 import { checkConnection } from './actions/checkConnection';
-import { ensureLoggedIn } from './actions/linkedinLogin';
 import { waitDelay } from './actions/waitDelay';
 import { syncInbox } from './actions/syncInbox';
 import { getSupabaseClient } from '../supabase';
 import { RateLimiter } from './helpers/rateLimiter';
 import { logger } from '../logger';
+import { Logger as LiveRunLogger } from '../lib/logger';
+import { browserSessionManager } from './BrowserSessionManager';
+import { SessionHealer } from './SessionHealer';
 import type { ActionResult, Lead, WorkflowEdge, WorkflowNode } from '../../types';
 
 interface StartPayload {
@@ -34,6 +36,7 @@ const DAILY_LIMITS: Record<string, number> = {
 
 export class WorkflowExecutor {
   private manager = new PlaywrightManager();
+  private sessionHealer = new SessionHealer();
   private rateLimiter = new RateLimiter();
   private isRunning = false;
   private shouldStop = false;
@@ -170,16 +173,23 @@ export class WorkflowExecutor {
     const supabase = this.getSupabase();
     let completed = 0;
     let failed = 0;
+    const usePersistentSession = Boolean(profileContext.adspowerProfileId);
 
     try {
-      const page = await this.launchPageWithTimeout(120000, {
-        adspowerProfileId: profileContext.adspowerProfileId,
-      });
+      const page = usePersistentSession
+        ? await browserSessionManager.getSession(profileContext.id, profileContext.adspowerProfileId!)
+        : await this.launchPageWithTimeout(120000, {
+            adspowerProfileId: profileContext.adspowerProfileId,
+          });
 
-      if (profileContext.adspowerProfileId) {
-        const loginOutcome = await ensureLoggedIn(page, profileContext.id, profileContext.adspowerProfileId);
-        if (!['already_logged_in', 'logged_in'].includes(loginOutcome)) {
-          throw new Error(`LinkedIn login failed before workflow execution (${loginOutcome})`);
+      if (usePersistentSession) {
+        const healed = await this.sessionHealer.healSession(
+          profileContext.id,
+          profileContext.adspowerProfileId!,
+          page
+        );
+        if (!healed) {
+          throw new Error('LinkedIn login failed before workflow execution (session healer failed)');
         }
 
         await syncInbox(page, profileContext.id).catch(() => undefined);
@@ -275,7 +285,9 @@ export class WorkflowExecutor {
     } finally {
       this.isRunning = false;
       this.shouldStop = false;
-      await this.manager.cleanup();
+      if (!usePersistentSession) {
+        await this.manager.cleanup();
+      }
     }
   }
 
@@ -403,101 +415,157 @@ export class WorkflowExecutor {
     leadId: string | null,
     nodeId: string,
     nodeType: string,
-    status: 'running' | 'success' | 'error' | 'skipped',
+    status: 'running' | 'success' | 'error' | 'skipped' | 'info',
     message: string,
-    resultData: Record<string, unknown> = {}
+    resultData: Record<string, unknown> = {},
+    isTest = false
   ) {
-    if (!this.currentRunId) return;
-
-    if (this.currentRunId.startsWith('test_')) {
-      logger.debug('Node test log', {
+    if (!this.currentRunId) {
+      logger.info('Execution log (ephemeral)', {
         nodeId,
         nodeType,
         status,
         message,
+        leadId,
       });
       return;
     }
 
-    const { error } = await this.getSupabase().from('execution_logs').insert({
-      run_id: this.currentRunId,
-      lead_id: leadId,
-      node_id: nodeId,
-      node_type: nodeType,
-      status,
-      message,
-      result_data: resultData,
-    });
-
-    if (error) {
-      logger.warn('Failed to insert execution log', {
-        runId: this.currentRunId,
-        nodeId,
-        error: error.message,
-      });
-    }
+    const runLogger = new LiveRunLogger(this.currentRunId);
+    await runLogger.log(nodeId, nodeType, status, message, leadId || undefined, resultData, isTest);
   }
 
   async testNode({
-    nodeType,
-    nodeData,
+    runId,
+    action,
+    nodeType = '',
+    nodeData = {},
     linkedinUrl,
     linkedinProfileId,
+    profileId,
+    testUrl,
+    lead,
+    leadId,
+    messageTemplate,
+    isTest = true,
   }: {
-    nodeType: string;
-    nodeData: Record<string, unknown>;
+    runId?: string;
+    action?: string;
+    nodeType?: string;
+    nodeData?: Record<string, unknown>;
     nodeId?: string;
-    linkedinUrl: string;
+    linkedinUrl?: string;
     linkedinProfileId?: string;
+    profileId?: string;
+    testUrl?: string;
+    lead?: Lead;
+    leadId?: string;
+    messageTemplate?: string;
+    isTest?: boolean;
   }) {
-    const testRunId = `test_${Date.now()}`;
+    const actionToNodeType: Record<string, string> = {
+      visit: 'visit_profile',
+      connect: 'send_connection',
+      message: 'send_message',
+      follow: 'follow_profile',
+      check: 'check_connection',
+    };
+
+    const resolvedNodeType = nodeType || (action ? actionToNodeType[action] : '');
+    const resolvedProfileId = linkedinProfileId || profileId;
+    const resolvedUrl = lead?.linkedin_url || linkedinUrl || testUrl || '';
+    const resolvedNodeData: Record<string, unknown> = { ...nodeData };
+    if (
+      resolvedNodeType === 'send_message' &&
+      typeof messageTemplate === 'string' &&
+      messageTemplate.trim() &&
+      !resolvedNodeData.messageTemplate &&
+      !resolvedNodeData.message
+    ) {
+      resolvedNodeData.messageTemplate = messageTemplate.trim();
+    }
+    const testRunId = runId || null;
     this.currentRunId = testRunId;
 
     const profileContext =
-      linkedinProfileId && typeof linkedinProfileId === 'string'
-        ? await this.getAutomationProfileContext(linkedinProfileId)
+      resolvedProfileId && typeof resolvedProfileId === 'string'
+        ? await this.getAutomationProfileContext(resolvedProfileId)
         : null;
+    const usePersistentSession = Boolean(profileContext?.adspowerProfileId);
 
     try {
-      await this.log(null, 'test_init', 'test', 'running', `Starting test for ${nodeType}...`);
+      await this.log(null, 'test_init', 'test', 'running', `Starting test for ${resolvedNodeType}...`, {}, isTest);
 
-      if (nodeType === 'wait_delay') {
+      if (resolvedNodeType === 'wait_delay') {
         const res = await waitDelay(nodeData);
         await this.log(
           null,
           'test_wait',
           'wait_delay',
           res.success ? 'success' : 'error',
-          (res as any).action || (res as any).error || 'Wait completed'
+          (res as any).action || (res as any).error || 'Wait completed',
+          {},
+          isTest
         );
         return res;
       }
 
-      const page = await this.launchPageWithTimeout(90000, {
-        adspowerProfileId: profileContext?.adspowerProfileId,
-      });
+      if (!resolvedUrl) {
+        throw new Error('linkedinUrl/testUrl is required for this test');
+      }
 
-      if (profileContext?.adspowerProfileId) {
-        const loginOutcome = await ensureLoggedIn(page, profileContext.id, profileContext.adspowerProfileId);
-        if (!['already_logged_in', 'logged_in'].includes(loginOutcome)) {
-          throw new Error(`LinkedIn login failed before test run (${loginOutcome})`);
+      const page = usePersistentSession
+        ? await browserSessionManager.getSession(profileContext!.id, profileContext!.adspowerProfileId!)
+        : await this.launchPageWithTimeout(90000, {
+            adspowerProfileId: profileContext?.adspowerProfileId,
+          });
+
+      if (usePersistentSession) {
+        const healed = await this.sessionHealer.healSession(
+          profileContext!.id,
+          profileContext!.adspowerProfileId!,
+          page
+        );
+        if (!healed) {
+          throw new Error('LinkedIn login failed before test run (session healer failed)');
         }
 
-        await syncInbox(page, profileContext.id).catch(() => undefined);
+        await syncInbox(page, profileContext!.id).catch(() => undefined);
       }
-      const fakeLead: Lead = {
-        id: 'test',
-        profile_id: linkedinProfileId || 'test',
-        linkedin_url: linkedinUrl,
-        first_name: 'Test',
-        last_name: 'User',
-        company: 'Example',
-        title: 'Operator',
-        extra_data: {},
-        status: 'pending',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+
+      const nowIso = new Date().toISOString();
+      const fakeLead: Lead = lead
+        ? {
+            ...lead,
+            id: lead.id || leadId || 'test',
+            profile_id: lead.profile_id || resolvedProfileId || 'test',
+            linkedin_url: lead.linkedin_url || resolvedUrl,
+            first_name: lead.first_name ?? '',
+            last_name: lead.last_name ?? '',
+            company: lead.company ?? '',
+            title: lead.title ?? '',
+            extra_data: lead.extra_data ?? {},
+            status: lead.status ?? 'pending',
+            created_at: lead.created_at || nowIso,
+            updated_at: lead.updated_at || nowIso,
+          }
+        : {
+            id: leadId || 'test',
+            profile_id: resolvedProfileId || 'test',
+            linkedin_url: resolvedUrl,
+            first_name: 'Test',
+            last_name: 'User',
+            company: 'Example',
+            title: 'Operator',
+            extra_data: {},
+            status: 'pending',
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+
+      if (!fakeLead.linkedin_url) {
+        throw new Error('linkedinUrl/testUrl is required for this test');
+      }
 
       const nodeTypesNeedingProfileContext = new Set([
         'follow_profile',
@@ -506,27 +574,43 @@ export class WorkflowExecutor {
         'check_connection',
       ]);
 
-      if (nodeTypesNeedingProfileContext.has(nodeType)) {
-        await this.log(fakeLead.id, 'test_visit', 'visit_profile', 'running', 'Visiting profile for context...');
+      if (nodeTypesNeedingProfileContext.has(resolvedNodeType)) {
+        await this.log(
+          fakeLead.id,
+          'test_visit',
+          'visit_profile',
+          'running',
+          'Visiting profile for context...',
+          {},
+          isTest
+        );
         await visitProfile(page, { useCurrentLead: true }, fakeLead);
         await page.waitForTimeout(1500);
       }
 
-      await this.log(fakeLead.id, 'test_action', nodeType, 'running', `Executing ${nodeType} action...`);
+      await this.log(
+        fakeLead.id,
+        'test_action',
+        resolvedNodeType,
+        'running',
+        `Executing ${resolvedNodeType} action...`,
+        {},
+        isTest
+      );
 
       let result: ActionResult;
-      switch (nodeType) {
+      switch (resolvedNodeType) {
         case 'visit_profile':
           result = await visitProfile(page, { useCurrentLead: true }, fakeLead);
           break;
         case 'follow_profile':
-          result = await followProfile(page, nodeData, fakeLead);
+          result = await followProfile(page, resolvedNodeData, fakeLead);
           break;
         case 'send_message':
-          result = await sendMessage(page, nodeData, fakeLead);
+          result = await sendMessage(page, resolvedNodeData, fakeLead);
           break;
         case 'send_connection':
-          result = await sendConnection(page, nodeData, fakeLead);
+          result = await sendConnection(page, resolvedNodeData, fakeLead);
           break;
         case 'check_connection':
           result = await checkConnection(page, fakeLead);
@@ -538,29 +622,36 @@ export class WorkflowExecutor {
       await this.log(
         fakeLead.id,
         'test_result',
-        nodeType,
+        resolvedNodeType,
         result.success ? 'success' : 'error',
         result.action || result.error || 'Test finished',
-        result.data
+        result.data,
+        isTest
       );
 
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Test failed';
-      await this.log(null, 'test_error', 'error', 'error', errorMessage);
+      await this.log(null, 'test_error', 'error', 'error', errorMessage, {}, isTest);
       return { success: false, error: errorMessage };
     } finally {
-      await this.manager.cleanup().catch((cleanupError) => {
-        logger.warn('Failed to cleanup browser after node test', {
-          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      if (!usePersistentSession) {
+        await this.manager.cleanup().catch((cleanupError) => {
+          logger.warn('Failed to cleanup browser after node test', {
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          });
         });
-      });
+      }
 
-      setTimeout(() => {
-        if (this.currentRunId === testRunId) {
-          this.currentRunId = null;
-        }
-      }, 5000);
+      if (testRunId) {
+        setTimeout(() => {
+          if (this.currentRunId === testRunId) {
+            this.currentRunId = null;
+          }
+        }, 5000);
+      } else {
+        this.currentRunId = null;
+      }
     }
   }
 

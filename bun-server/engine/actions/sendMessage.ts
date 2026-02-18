@@ -1,26 +1,7 @@
 import type { Page } from 'playwright';
-import { actionPause, humanClick, humanType, thinkingPause } from '../helpers/humanBehavior';
-import { detectRateLimit, dismissPopups, findVisibleButton } from '../helpers/linkedinGuard';
 import { interpolate } from '../helpers/templateEngine';
+import { sendMessageAction } from '../playwright-actions/sendMessage.spec';
 import type { ActionResult, Lead } from '../../../types';
-
-const MESSAGE_BTN_SELECTORS = [
-  'button:has-text("Message")',
-  '[aria-label*="Message"]',
-  'a:has-text("Message")',
-];
-
-const MESSAGE_INPUT_SELECTORS = [
-  '.msg-form__contenteditable',
-  '[contenteditable="true"][role="textbox"]',
-  '[data-artdeco-is-focused] [contenteditable]',
-];
-
-const SEND_BTN_SELECTORS = [
-  'button.msg-form__send-button',
-  '[aria-label="Send"]',
-  'button:has-text("Send")',
-];
 
 type SendMessageConfig = {
   message?: string;
@@ -44,39 +25,10 @@ export async function sendMessage(
     return { success: false, error: 'MESSAGE_TEXT_EMPTY' };
   }
 
-  await dismissPopups(page);
+  const recipientName = lead ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() : undefined;
 
-  if (await detectRateLimit(page)) {
-    return { success: false, error: 'RATE_LIMITED' };
-  }
-
-  const msgBtn = await findVisibleButton(page, MESSAGE_BTN_SELECTORS, 3000);
-  if (!msgBtn) {
-    return { success: false, error: 'MESSAGE_BUTTON_NOT_FOUND' };
-  }
-
-  await humanClick(page, msgBtn.locator);
-  await actionPause();
-  await dismissPopups(page);
-
-  const inputBox = await findVisibleButton(page, MESSAGE_INPUT_SELECTORS, 4000);
-  if (!inputBox) {
-    return { success: false, error: 'MESSAGE_INPUT_NOT_FOUND' };
-  }
-
-  await thinkingPause();
-  await humanType(page, inputBox.locator, text);
-  await thinkingPause();
-  await dismissPopups(page);
-
-  const sendBtn = await findVisibleButton(page, SEND_BTN_SELECTORS, 3000);
-  if (!sendBtn) {
-    return { success: false, error: 'SEND_BUTTON_NOT_FOUND' };
-  }
-
-  await humanClick(page, sendBtn.locator);
-  await actionPause();
-  await dismissPopups(page);
-
-  return { success: true, action: 'message_sent' };
+  return sendMessageAction(page, {
+    message: text,
+    recipientName
+  });
 }

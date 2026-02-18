@@ -5,10 +5,13 @@ import { CampaignExecutor } from './engine/CampaignExecutor';
 import { UniboxSyncer } from './engine/UniboxSyncer';
 import { LoginManager } from './engine/LoginManager';
 import { AdsPowerManager } from './engine/AdsPowerManager';
+import { browserSessionManager } from './engine/BrowserSessionManager';
 import { encryptCredential } from './engine/helpers/crypto';
 import { loadLocalEnv } from './loadEnv';
 import { logger } from './logger';
 import { runProxyTest } from './proxyTest';
+import { LiveLogger } from './lib/LiveLogger';
+import type { Lead } from '../types';
 
 const port = Number(process.env.BUN_SERVER_PORT || 3001);
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000')
@@ -28,7 +31,7 @@ function buildCorsHeaders(requestOrigin: string | undefined) {
   return {
     'Access-Control-Allow-Origin': resolveResponseOrigin(requestOrigin),
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, x-server-secret',
+    'Access-Control-Allow-Headers': 'Content-Type, x-server-secret, Accept',
   };
 }
 
@@ -99,6 +102,38 @@ function buildServer(
 
     if (method === 'GET' && url.pathname === '/health') {
       writeJson(res, 200, { ok: true, service: 'bun-server' }, requestOrigin);
+      return;
+    }
+
+    if (method === 'GET' && url.pathname.startsWith('/logs/stream/')) {
+      const runId = decodeURIComponent(url.pathname.replace('/logs/stream/', '').trim());
+      if (!runId) {
+        writeJson(res, 400, { error: 'runId is required' }, requestOrigin);
+        return;
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        ...buildCorsHeaders(requestOrigin),
+      });
+
+      res.write(': connected\n\n');
+
+      const unsubscribe = LiveLogger.subscribe(runId, (entry) => {
+        res.write(`data: ${JSON.stringify(entry)}\n\n`);
+      });
+
+      const heartbeat = setInterval(() => {
+        res.write(': ping\n\n');
+      }, 20000);
+
+      req.on('close', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+        res.end();
+      });
       return;
     }
 
@@ -226,6 +261,24 @@ function buildServer(
         return;
       }
 
+      if (method === 'POST' && url.pathname === '/sessions/close') {
+        const body = (await readJsonBody(req as any)) as { profileId?: string };
+        if (!body.profileId) {
+          writeJson(res, 400, { error: 'profileId is required' }, requestOrigin);
+          return;
+        }
+
+        await browserSessionManager.closeSession(body.profileId);
+        writeJson(res, 200, { closed: true, profileId: body.profileId }, requestOrigin);
+        return;
+      }
+
+      if (method === 'POST' && url.pathname === '/sessions/close-all') {
+        await browserSessionManager.closeAll();
+        writeJson(res, 200, { closed: true, all: true }, requestOrigin);
+        return;
+      }
+
       if (method === 'GET' && url.pathname === '/auth/status') {
         const profileId = url.searchParams.get('profileId') ?? undefined;
         writeJson(res, 200, loginManager.getStatus(profileId), requestOrigin);
@@ -289,9 +342,45 @@ function buildServer(
       }
 
       if (method === 'POST' && url.pathname === '/test') {
-        const body = await readJsonBody(req as any);
-        const result = await executor.testNode(body as any);
-        writeJson(res, 200, result, requestOrigin);
+        const body = (await readJsonBody(req as any)) as {
+          runId?: string;
+          action?: string;
+          nodeType?: string;
+          nodeData?: Record<string, unknown>;
+          linkedinUrl?: string;
+          linkedinProfileId?: string;
+          profileId?: string;
+          testUrl?: string;
+          lead?: Lead;
+          leadId?: string;
+          messageTemplate?: string;
+          isTest?: boolean;
+        };
+
+        const result = await executor.testNode({
+          runId: body.runId,
+          action: body.action,
+          nodeType: body.nodeType,
+          nodeData: body.nodeData ?? {},
+          linkedinUrl: body.linkedinUrl,
+          linkedinProfileId: body.linkedinProfileId,
+          profileId: body.profileId,
+          testUrl: body.testUrl,
+          lead: body.lead,
+          leadId: body.leadId,
+          messageTemplate: body.messageTemplate,
+          isTest: body.isTest ?? true,
+        });
+
+        writeJson(
+          res,
+          200,
+          {
+            runId: body.runId ?? null,
+            ...result,
+          },
+          requestOrigin
+        );
         return;
       }
 

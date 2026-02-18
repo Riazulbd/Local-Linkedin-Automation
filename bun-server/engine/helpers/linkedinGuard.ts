@@ -81,7 +81,7 @@ export async function safeWaitForSettle(page: Page): Promise<void> {
 
 export async function findVisibleButton(
   page: Page,
-  selectors: string[],
+  selectors: string[] | readonly string[],
   timeoutMs = 2000
 ): Promise<{ locator: import('playwright').Locator; selectorUsed: string } | null> {
   for (const sel of selectors) {

@@ -68,36 +68,22 @@ export const LI = {
 
   // ── Messaging ─────────────────────────────────────────────────
   messageComposeBox: [
+    // Primary - specific to open conversation bubble
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) .msg-form__contenteditable[contenteditable="true"]',
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) [role="textbox"][contenteditable="true"]',
+
+    // Fallbacks
+    '.msg-overlay-conversation-bubble [contenteditable="true"]',
     '.msg-form__contenteditable[contenteditable="true"]',
-    '.msg-overlay-conversation-bubble .msg-form__contenteditable[contenteditable="true"]',
-    '.msg-overlay-conversation-bubble .msg-form__contenteditable[role="textbox"]',
-    '.msg-overlay-conversation-bubble [data-lexical-editor="true"][contenteditable="true"]',
-    '.msg-overlay-conversation-bubble .msg-form__message-texteditor [contenteditable="true"]',
-    '.msg-form__msg-content-container [contenteditable="true"]',
-    '.msg-form__msg-content-container [role="textbox"]',
-    '.msg-overlay-bubble-header ~ * [contenteditable="true"][role="textbox"]',
-    '.msg-overlay-bubble-header + div [contenteditable="true"][role="textbox"]',
-    '.msg-s-message-list-container [role="textbox"][contenteditable="true"]',
-    '.msg-s-message-list-container .msg-form__contenteditable[contenteditable="true"]',
-    '.msg-form [contenteditable="true"][role="textbox"]',
-    '[data-view-name*="message"] [contenteditable="true"][role="textbox"]',
-    '[aria-label*="Write a message"][contenteditable="true"]',
-    '[aria-label*="message"][contenteditable="true"]',
-    'div[contenteditable="true"][data-placeholder*="message"]',
-    'textarea[placeholder*="message"]',
-    'textarea[name="message"]',
-    'div.msg-form__contenteditable[role="textbox"]',
-    '[contenteditable="true"][role="textbox"]',
-    '[data-artdeco-is-focused] [contenteditable]',
-    '.msg-s-message-list-container [contenteditable]',
   ],
   messageComposeActivator: [
-    '.msg-form__placeholder',
-    '.msg-form__msg-content-container [role="textbox"]',
-    '.msg-overlay-conversation-bubble [aria-label*="Write a message"]',
-    '.msg-overlay-conversation-bubble [aria-label*="message"]',
-    '.msg-form [aria-label*="Write"]',
-    '.msg-form textarea',
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) .msg-form__placeholder',
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) [aria-label*="Write a message"]',
+  ],
+  messageModalHeader: [
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) .msg-overlay-bubble-header__title',
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) a.ember-view.truncate',
+    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) h2',
   ],
   messagingConversationItem: [
     '.msg-conversation-listitem',
@@ -166,7 +152,7 @@ export async function findFirst(
           return candidate;
         }
       }
-    } catch {}
+    } catch { }
   }
   return null;
 }

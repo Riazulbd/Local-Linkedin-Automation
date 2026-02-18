@@ -20,6 +20,7 @@ export default function EditProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingLogin, setIsTestingLogin] = useState(false);
+  const [isStoppingBrowser, setIsStoppingBrowser] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -173,6 +174,30 @@ export default function EditProfilePage() {
     }
   }
 
+  async function stopBrowserSession() {
+    if (!profile) return;
+
+    setIsStoppingBrowser(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/profiles/${profile.id}/stop-browser`, {
+        method: 'POST',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to close browser session');
+      }
+
+      setMessage('Browser session closed for this profile');
+    } catch (sessionError) {
+      setError(sessionError instanceof Error ? sessionError.message : 'Failed to close browser session');
+    } finally {
+      setIsStoppingBrowser(false);
+    }
+  }
+
   if (isLoading) {
     return <div className="p-6 text-sm text-text-faint">Loading...</div>;
   }
@@ -317,6 +342,15 @@ export default function EditProfilePage() {
         </div>
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={stopBrowserSession}
+            disabled={isStoppingBrowser}
+            className="rounded-lg border border-slate-500/40 px-4 py-2 text-xs font-medium text-slate-200 hover:bg-slate-500/20 disabled:opacity-60"
+          >
+            {isStoppingBrowser ? 'Closing Browser...' : 'Stop Browser Session'}
+          </button>
+
           <button
             type="button"
             onClick={testLogin}

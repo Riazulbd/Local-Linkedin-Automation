@@ -28,6 +28,7 @@ export function CampaignCard({
 
   return (
     <article
+      data-hover="lift"
       className={`rounded-xl border p-4 transition ${
         selected
           ? 'border-cyan-400/50 bg-cyan-500/10'

@@ -1,11 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '../lib/supabase';
 import { Logger } from '../lib/logger';
-import { AdsPowerManager } from './AdsPowerManager';
-import { PlaywrightManager } from './PlaywrightManager';
 import { checkConnection } from './actions/checkConnection';
 import { followProfile } from './actions/followProfile';
-import { ensureLoggedIn } from './actions/linkedinLogin';
 import { sendConnection } from './actions/sendConnection';
 import { sendMessage } from './actions/sendMessage';
 import { syncInbox } from './actions/syncInbox';
@@ -13,6 +10,8 @@ import { visitProfile } from './actions/visitProfile';
 import { dismissPopups, detectLoggedOut } from './helpers/linkedinGuard';
 import { betweenLeadsPause, actionPause, randomBetween } from './helpers/humanBehavior';
 import { interpolate } from './helpers/templateEngine';
+import { browserSessionManager } from './BrowserSessionManager';
+import { SessionHealer } from './SessionHealer';
 import type { CampaignStep, Lead } from '../../types';
 
 // Active execution abort map keyed by profileId.
@@ -47,6 +46,7 @@ export async function runCampaignForProfile(
   runId: string
 ): Promise<void> {
   const logger = new Logger(runId);
+  const sessionHealer = new SessionHealer();
   clearAbort(profileId);
 
   const { data: steps } = await supabase
@@ -75,36 +75,22 @@ export async function runCampaignForProfile(
     return;
   }
 
-  let wsEndpoint = '';
-  try {
-    const started = await AdsPowerManager.startProfile(adspowerProfileId);
-    wsEndpoint = started.wsEndpoint;
-  } catch (error) {
-    await logger.log(
-      'browser',
-      'campaign',
-      'error',
-      `AdsPower failed: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return;
-  }
-
   let page: import('playwright').Page | null = null;
 
   try {
-    page = await PlaywrightManager.connectAndGetPage(wsEndpoint);
+    page = await browserSessionManager.getSession(profileId, adspowerProfileId);
 
-    const loginOutcome = await ensureLoggedIn(page, profileId, adspowerProfileId);
-    if (!['already_logged_in', 'logged_in'].includes(loginOutcome)) {
+    const sessionReady = await sessionHealer.healSession(profileId, adspowerProfileId, page);
+    if (!sessionReady) {
       await logger.log(
         'session',
         'campaign',
         'error',
-        `LinkedIn login failed: ${loginOutcome}`
+        'LinkedIn session invalid after warmup/heal'
       );
       await supabase
         .from('linkedin_profiles')
-        .update({ login_status: loginOutcome === '2fa_required' ? '2fa_pending' : 'error' })
+        .update({ login_status: 'error' })
         .eq('id', profileId);
       return;
     }
@@ -135,12 +121,16 @@ export async function runCampaignForProfile(
       if (!lead) continue;
 
       if (await detectLoggedOut(page)) {
-        await logger.log('session', 'campaign', 'error', 'Session expired - stopping', lead.id);
-        await supabase
-          .from('linkedin_profiles')
-          .update({ login_status: 'logged_out' })
-          .eq('id', profileId);
-        break;
+        await logger.log('session', 'campaign', 'running', 'Session expired - healing', lead.id);
+        const healed = await sessionHealer.healSession(profileId, adspowerProfileId, page);
+        if (!healed) {
+          await logger.log('session', 'campaign', 'error', 'Session healing failed - stopping', lead.id);
+          await supabase
+            .from('linkedin_profiles')
+            .update({ login_status: 'logged_out' })
+            .eq('id', profileId);
+          break;
+        }
       }
 
       await logger.log(
@@ -171,11 +161,6 @@ export async function runCampaignForProfile(
       `Fatal: ${error instanceof Error ? error.message : String(error)}`
     );
   } finally {
-    if (page) {
-      await PlaywrightManager.disconnect(page).catch(() => undefined);
-    }
-
-    await AdsPowerManager.stopProfile(adspowerProfileId).catch(() => undefined);
     await supabase
       .from('linkedin_profiles')
       .update({ status: 'idle' })
@@ -208,7 +193,7 @@ async function executeStepsForLead(
     try {
       switch (step.step_type) {
         case 'visit_profile':
-          result = await visitProfile(page, lead.linkedin_url);
+          result = await visitProfile(page, { useCurrentLead: true }, lead);
           break;
 
         case 'follow_profile':
@@ -225,7 +210,7 @@ async function executeStepsForLead(
         case 'send_message': {
           const rawMessage = String(step.config.message || '');
           const message = interpolate(rawMessage, lead);
-          result = await sendMessage(page, message);
+          result = await sendMessage(page, { message }, lead);
           break;
         }
 

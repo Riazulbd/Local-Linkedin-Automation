@@ -13,6 +13,7 @@ const STATUS_ROW_CLASS: Record<ExecutionLog['status'], string> = {
   success: 'border-l-green-400/70 bg-green-500/5',
   error: 'border-l-red-400/70 bg-red-500/5',
   skipped: 'border-l-yellow-400/70 bg-yellow-500/5',
+  info: 'border-l-slate-400/70 bg-slate-500/5',
 };
 
 const STATUS_TEXT_CLASS: Record<ExecutionLog['status'], string> = {
@@ -20,6 +21,7 @@ const STATUS_TEXT_CLASS: Record<ExecutionLog['status'], string> = {
   success: 'text-green-300',
   error: 'text-red-300',
   skipped: 'text-yellow-300',
+  info: 'text-slate-300',
 };
 
 export function LogEntry({ log, onClick }: LogEntryProps) {

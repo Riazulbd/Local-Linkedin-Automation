@@ -4,6 +4,8 @@ export interface LinkedInProfile {
   id: string;
   name: string;
   linkedin_email: string | null;
+  linkedin_email_login?: string | null;
+  linkedin_password_enc?: string | null;
   adspower_profile_id: string;
   brightdata_host: string | null;
   brightdata_port: number | null;
@@ -15,6 +17,8 @@ export interface LinkedInProfile {
   twofa_challenge_type?: 'email_code' | 'authenticator' | null;
   twofa_requested_at?: string | null;
   pending_2fa_code?: string | null;
+  session_valid?: boolean;
+  last_login_at?: string | null;
   status: 'idle' | 'running' | 'paused' | 'error';
   daily_visit_count: number;
   daily_connect_count: number;
