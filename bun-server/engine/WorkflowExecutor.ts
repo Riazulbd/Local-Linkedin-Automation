@@ -550,6 +550,12 @@ export class WorkflowExecutor {
       await this.log(null, 'test_error', 'error', 'error', errorMessage);
       return { success: false, error: errorMessage };
     } finally {
+      await this.manager.cleanup().catch((cleanupError) => {
+        logger.warn('Failed to cleanup browser after node test', {
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      });
+
       setTimeout(() => {
         if (this.currentRunId === testRunId) {
           this.currentRunId = null;

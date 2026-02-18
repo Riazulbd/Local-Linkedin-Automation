@@ -48,7 +48,11 @@ export class PlaywrightManager {
       this.context &&
       this.activeAdsPowerProfileId === requestedAdsPowerProfileId
     ) {
-      return { browser: this.browser, context: this.context };
+      const canReuseBrowser =
+        this.browser.isConnected() && (await this.isContextUsable(this.context));
+      if (canReuseBrowser) {
+        return { browser: this.browser, context: this.context };
+      }
     }
 
     if (this.browser || this.context) {
@@ -69,7 +73,7 @@ export class PlaywrightManager {
   }
 
   async getPage(options: PlaywrightLaunchOptions = {}): Promise<Page> {
-    if (!this.context) {
+    if (!this.context || !(await this.isContextUsable(this.context))) {
       await this.launch(options);
     }
 
@@ -378,6 +382,16 @@ export class PlaywrightManager {
 
     try {
       await page.evaluate(() => true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async isContextUsable(context: BrowserContext) {
+    try {
+      context.pages();
+      await context.cookies();
       return true;
     } catch {
       return false;
