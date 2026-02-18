@@ -203,7 +203,7 @@ async function executeStepsForLead(
         case 'send_connection': {
           const rawNote = String(step.config.note || '');
           const note = rawNote ? interpolate(rawNote, lead) : undefined;
-          result = await sendConnection(page, note);
+          result = await sendConnection(page, { note }, lead);
           break;
         }
 

@@ -86,6 +86,25 @@ export async function findVisibleButton(
 ): Promise<{ locator: import('playwright').Locator; selectorUsed: string } | null> {
   const maxCandidatesPerSelector = 30;
 
+  const isGlobalSearchElement = async (locator: import('playwright').Locator): Promise<boolean> => {
+    try {
+      return await locator.evaluate((el) => {
+        const isSearchInput =
+          el.matches('input[role="combobox"][aria-label*="Search" i]') ||
+          el.matches('input.search-global-typeahead__input') ||
+          el.matches('[data-view-name="search-global-typeahead-input"]');
+
+        const inSearchContainer = Boolean(
+          el.closest('.search-global-typeahead, .global-nav__search, [data-view-name*="search-global-typeahead"]')
+        );
+
+        return isSearchInput || inSearchContainer;
+      });
+    } catch {
+      return false;
+    }
+  };
+
   for (const sel of selectors) {
     try {
       const root = page.locator(sel);
@@ -99,6 +118,10 @@ export async function findVisibleButton(
         const candidateTimeout = idx === 0 ? timeoutMs : 300;
 
         if (!(await locator.isVisible({ timeout: candidateTimeout }))) {
+          continue;
+        }
+
+        if (await isGlobalSearchElement(locator)) {
           continue;
         }
 
