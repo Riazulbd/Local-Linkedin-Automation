@@ -12,6 +12,16 @@ import { logger } from '../logger';
 
 const STATE_PATH = path.join(process.cwd(), 'session.json');
 
+function isAdsPowerStartupPage(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.toLowerCase() === 'start.adspower.net';
+  } catch {
+    return url.toLowerCase().includes('start.adspower.net');
+  }
+}
+
 interface AdsPowerStartResponse {
   code: number;
   msg?: string;
@@ -78,28 +88,47 @@ export class PlaywrightManager {
     }
 
     if (this.activePage && (await this.isPageUsable(this.activePage))) {
-      await this.closeExtraPages(this.activePage);
-      await this.activePage.bringToFront().catch(() => undefined);
-      return this.activePage;
+      if (!isAdsPowerStartupPage(this.activePage.url())) {
+        await this.closeExtraPages(this.activePage);
+        await this.activePage.bringToFront().catch(() => undefined);
+        return this.activePage;
+      }
+
+      await this.activePage.close().catch(() => undefined);
+      this.activePage = null;
     }
 
     const pages = this.context!.pages();
+    const usablePages: Page[] = [];
+
     for (const page of pages) {
       if (await this.isPageUsable(page)) {
-        this.activePage = page;
-        await this.closeExtraPages(page);
-        await page.bringToFront().catch(() => undefined);
-        return page;
+        usablePages.push(page);
+        continue;
       }
 
       await page.close().catch(() => undefined);
     }
 
-    const page = await this.context!.newPage();
-    this.activePage = page;
-    await page.bringToFront().catch(() => undefined);
-    await this.closeExtraPages(page);
-    return page;
+    let selectedPage = usablePages.find((page) => !isAdsPowerStartupPage(page.url()));
+
+    if (!selectedPage) {
+      for (const page of usablePages) {
+        if (!isAdsPowerStartupPage(page.url())) continue;
+        const closingUrl = page.url();
+        await page.close().catch(() => undefined);
+        logger.info('Closed AdsPower startup tab before automation', {
+          url: closingUrl,
+        });
+      }
+
+      selectedPage = await this.context!.newPage();
+    }
+
+    this.activePage = selectedPage;
+    await selectedPage.bringToFront().catch(() => undefined);
+    await this.closeExtraPages(selectedPage);
+    return selectedPage;
   }
 
   async cleanup() {
@@ -209,8 +238,13 @@ export class PlaywrightManager {
 
   private async startAdsPowerProfile(adspowerProfileId: string) {
     const baseUrl = this.getAdsPowerBaseUrl();
+    const startUrl = new URL('/api/v1/browser/start', baseUrl);
+    startUrl.searchParams.set('user_id', adspowerProfileId);
+    startUrl.searchParams.set('open_tabs', process.env.ADSPOWER_OPEN_STARTUP_TABS || '0');
+    startUrl.searchParams.set('ip_tab', process.env.ADSPOWER_OPEN_IP_TAB || '0');
+
     const response = await fetch(
-      `${baseUrl}/api/v1/browser/start?user_id=${encodeURIComponent(adspowerProfileId)}`,
+      startUrl.toString(),
       {
         method: 'GET',
         headers: this.getAdsPowerHeaders(),
@@ -417,9 +451,16 @@ export class PlaywrightManager {
     });
 
     const context = browser.contexts()[0] ?? (await browser.newContext({ viewport: null }));
-    const page =
-      context.pages().find((entry) => !entry.isClosed()) ??
-      (await context.newPage());
+    const openPages = context.pages().filter((entry) => !entry.isClosed());
+    let page = openPages.find((entry) => !isAdsPowerStartupPage(entry.url()));
+
+    if (!page) {
+      for (const entry of openPages) {
+        if (!isAdsPowerStartupPage(entry.url())) continue;
+        await entry.close().catch(() => undefined);
+      }
+      page = await context.newPage();
+    }
 
     staticPageBrowserMap.set(page, browser);
     await page.bringToFront().catch(() => undefined);

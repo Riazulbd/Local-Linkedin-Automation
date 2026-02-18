@@ -50,8 +50,14 @@ async function request(path: string, init: RequestInit = {}): Promise<any> {
 
 export class AdsPowerManager {
   static async startProfile(profileId: string): Promise<{ wsEndpoint: string; profileId: string }> {
+    const startParams = new URLSearchParams({
+      user_id: profileId,
+      open_tabs: process.env.ADSPOWER_OPEN_STARTUP_TABS || '0',
+      ip_tab: process.env.ADSPOWER_OPEN_IP_TAB || '0',
+    });
+
     const data = (await request(
-      `/api/v1/browser/start?user_id=${encodeURIComponent(profileId)}`,
+      `/api/v1/browser/start?${startParams.toString()}`,
       { method: 'GET' }
     )) as AdsPowerBrowserStartResponse;
 
