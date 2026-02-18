@@ -14,6 +14,14 @@ interface AdsPowerBrowserStopResponse {
   msg?: string;
 }
 
+interface AdsPowerBrowserActiveResponse {
+  code: number;
+  msg?: string;
+  data?: {
+    status?: string;
+  };
+}
+
 function getBaseUrl(): string {
   return process.env.ADSPOWER_BASE_URL || 'http://localhost:50325';
 }
@@ -49,31 +57,103 @@ async function request(path: string, init: RequestInit = {}): Promise<any> {
 }
 
 export class AdsPowerManager {
-  static async startProfile(profileId: string): Promise<{ wsEndpoint: string; profileId: string }> {
-    const startParams = new URLSearchParams({
+  private static lastStartRequestAt = 0;
+
+  private static async cooldownStartRequests(): Promise<void> {
+    const minIntervalMs = 1200;
+    const elapsed = Date.now() - AdsPowerManager.lastStartRequestAt;
+    if (elapsed < minIntervalMs) {
+      await new Promise((resolve) => setTimeout(resolve, minIntervalMs - elapsed));
+    }
+    AdsPowerManager.lastStartRequestAt = Date.now();
+  }
+
+  private static async getActiveState(profileId: string): Promise<string> {
+    try {
+      const data = (await request(
+        `/api/v1/browser/active?user_id=${encodeURIComponent(profileId)}`,
+        { method: 'GET' }
+      )) as AdsPowerBrowserActiveResponse;
+      return data.data?.status || data.msg || 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private static async tryStart(
+    profileId: string,
+    openTabs: string,
+    ipTab: string
+  ): Promise<AdsPowerBrowserStartResponse> {
+    const params = new URLSearchParams({
       user_id: profileId,
-      open_tabs: process.env.ADSPOWER_OPEN_STARTUP_TABS || '0',
-      ip_tab: process.env.ADSPOWER_OPEN_IP_TAB || '0',
+      open_tabs: openTabs,
+      ip_tab: ipTab,
     });
+    await AdsPowerManager.cooldownStartRequests();
+    return (await request(`/api/v1/browser/start?${params.toString()}`, {
+      method: 'GET',
+    })) as AdsPowerBrowserStartResponse;
+  }
 
-    const data = (await request(
-      `/api/v1/browser/start?${startParams.toString()}`,
-      { method: 'GET' }
-    )) as AdsPowerBrowserStartResponse;
+  static async startProfile(profileId: string): Promise<{ wsEndpoint: string; profileId: string }> {
+    const startVariants = [
+      {
+        openTabs: process.env.ADSPOWER_OPEN_STARTUP_TABS || '0',
+        ipTab: process.env.ADSPOWER_OPEN_IP_TAB || '0',
+      },
+      { openTabs: '0', ipTab: '0' },
+      { openTabs: '1', ipTab: '0' },
+    ];
 
-    if (data.code !== 0) {
-      throw new Error(`AdsPower start failed: ${data.msg || 'unknown error'}`);
+    let lastMsg = 'unknown error';
+    let lastCode = -1;
+
+    for (const variant of startVariants) {
+      const data = await AdsPowerManager.tryStart(
+        profileId,
+        variant.openTabs,
+        variant.ipTab
+      ).catch((error) => {
+        lastMsg = error instanceof Error ? error.message : String(error);
+        return null;
+      });
+
+      if (!data) {
+        continue;
+      }
+
+      if (data.code === 0) {
+        const wsEndpoint = data.data?.ws?.playwright || data.data?.ws?.puppeteer;
+        if (!wsEndpoint) {
+          throw new Error('AdsPower start response missing websocket endpoint');
+        }
+
+        return {
+          wsEndpoint,
+          profileId,
+        };
+      }
+
+      lastCode = data.code;
+      lastMsg = data.msg || 'unknown error';
+
+      // AdsPower rate-limits start endpoint; back off and retry variant list.
+      if (lastMsg.toLowerCase().includes('too many request')) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
+      // Attempt stale-session cleanup between retries.
+      await AdsPowerManager.stopProfile(profileId).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
     }
 
-    const wsEndpoint = data.data?.ws?.playwright || data.data?.ws?.puppeteer;
-    if (!wsEndpoint) {
-      throw new Error('AdsPower start response missing websocket endpoint');
-    }
+    const activeState = await AdsPowerManager.getActiveState(profileId);
 
-    return {
-      wsEndpoint,
-      profileId,
-    };
+    throw new Error(
+      `AdsPower start failed (code=${lastCode}): ${lastMsg}. active=${activeState}. ` +
+        'Open the profile manually in AdsPower to verify local kernel health (AdsPower Error 100001).'
+    );
   }
 
   static async stopProfile(profileId: string): Promise<void> {

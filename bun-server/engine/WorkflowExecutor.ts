@@ -91,6 +91,28 @@ export class WorkflowExecutor {
     };
   }
 
+  private async hasStoredCredentials(profileId: string): Promise<boolean> {
+    const { data, error } = await this.getSupabase()
+      .from('linkedin_profiles')
+      .select('linkedin_email_encrypted, linkedin_password_encrypted, linkedin_email_login, linkedin_password_enc')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (error || !data) return false;
+    const row = data as Record<string, unknown>;
+    const hasNew =
+      typeof row.linkedin_email_encrypted === 'string' &&
+      row.linkedin_email_encrypted.length > 0 &&
+      typeof row.linkedin_password_encrypted === 'string' &&
+      row.linkedin_password_encrypted.length > 0;
+    const hasLegacy =
+      typeof row.linkedin_email_login === 'string' &&
+      row.linkedin_email_login.length > 0 &&
+      typeof row.linkedin_password_enc === 'string' &&
+      row.linkedin_password_enc.length > 0;
+    return hasNew || hasLegacy;
+  }
+
   async start({ workflowId, linkedinProfileId, leads, nodes, edges }: StartPayload) {
     if (this.isRunning) {
       throw new Error('Automation is already running');
@@ -492,6 +514,7 @@ export class WorkflowExecutor {
         ? await this.getAutomationProfileContext(resolvedProfileId)
         : null;
     const usePersistentSession = Boolean(profileContext?.adspowerProfileId);
+    let usedLocalBrowserForTest = !usePersistentSession;
 
     try {
       await this.log(null, 'test_init', 'test', 'running', `Starting test for ${resolvedNodeType}...`, {}, isTest);
@@ -514,23 +537,50 @@ export class WorkflowExecutor {
         throw new Error('linkedinUrl/testUrl is required for this test');
       }
 
-      const page = usePersistentSession
-        ? await browserSessionManager.getSession(profileContext!.id, profileContext!.adspowerProfileId!)
-        : await this.launchPageWithTimeout(90000, {
-            adspowerProfileId: profileContext?.adspowerProfileId,
-          });
-
+      let page: Page;
       if (usePersistentSession) {
+        try {
+          page = await browserSessionManager.getSession(profileContext!.id, profileContext!.adspowerProfileId!);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await this.log(
+            null,
+            'test_ads_fallback',
+            'system',
+            'info',
+            `AdsPower start failed (${message}). Falling back to local Chromium for test mode.`,
+            {},
+            isTest
+          );
+          page = await this.launchPageWithTimeout(90000, {});
+          usedLocalBrowserForTest = true;
+        }
+      } else {
+        page = await this.launchPageWithTimeout(90000, {});
+      }
+
+      if (profileContext) {
         const healed = await this.sessionHealer.healSession(
-          profileContext!.id,
-          profileContext!.adspowerProfileId!,
+          profileContext.id,
+          profileContext.adspowerProfileId || '',
           page
         );
         if (!healed) {
+          if (usedLocalBrowserForTest) {
+            const hasCredentials = await this.hasStoredCredentials(profileContext.id);
+            if (!hasCredentials) {
+              throw new Error(
+                'AdsPower start failed and this profile has no stored LinkedIn credentials. ' +
+                  'Add email/password in Settings > Profiles to enable fallback login.'
+              );
+            }
+          }
           throw new Error('LinkedIn login failed before test run (session healer failed)');
         }
 
-        await syncInbox(page, profileContext!.id).catch(() => undefined);
+        if (!usedLocalBrowserForTest) {
+          await syncInbox(page, profileContext.id).catch(() => undefined);
+        }
       }
 
       const nowIso = new Date().toISOString();
@@ -635,7 +685,7 @@ export class WorkflowExecutor {
       await this.log(null, 'test_error', 'error', 'error', errorMessage, {}, isTest);
       return { success: false, error: errorMessage };
     } finally {
-      if (!usePersistentSession) {
+      if (usedLocalBrowserForTest) {
         await this.manager.cleanup().catch((cleanupError) => {
           logger.warn('Failed to cleanup browser after node test', {
             error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),

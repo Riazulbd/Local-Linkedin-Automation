@@ -39,6 +39,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const userId =
+      typeof body.user_id === 'string' && body.user_id.trim()
+        ? body.user_id.trim()
+        : typeof body.userId === 'string' && body.userId.trim()
+          ? body.userId.trim()
+          : undefined;
 
     if (typeof body.linkedin_url !== 'string' || !body.linkedin_url.trim()) {
       return NextResponse.json({ error: 'linkedin_url is required' }, { status: 400 });
@@ -50,6 +56,7 @@ export async function POST(req: Request) {
 
     const supabase = createServiceClient();
     const input: CreateLeadInput = {
+      user_id: userId,
       profile_id: body.profile_id.trim(),
       linkedin_url: body.linkedin_url.trim(),
       first_name: typeof body.first_name === 'string' && body.first_name.trim() ? body.first_name.trim() : undefined,

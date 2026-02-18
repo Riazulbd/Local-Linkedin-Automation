@@ -26,6 +26,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const leads = Array.isArray(body.leads) ? (body.leads as UploadLead[]) : [];
     const profileId = typeof body.profileId === 'string' ? body.profileId : null;
+    const userId =
+      typeof body.user_id === 'string' && body.user_id.trim()
+        ? body.user_id.trim()
+        : typeof body.userId === 'string' && body.userId.trim()
+          ? body.userId.trim()
+          : null;
     const folderId = typeof body.folderId === 'string' ? body.folderId : null;
 
     if (!leads.length) {
@@ -42,6 +48,7 @@ export async function POST(req: Request) {
         if (!linkedinUrl) return null;
 
         return {
+          user_id: userId ?? undefined,
           profile_id: profileId,
           linkedin_url: linkedinUrl,
           first_name: lead.first_name?.trim() || '',

@@ -1,14 +1,25 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 const ALGORITHM = 'aes-256-cbc';
-const SECRET = process.env.ENCRYPTION_SECRET || '';
+
+function resolveSecret(): string {
+  const primary = process.env.ENCRYPTION_SECRET?.trim();
+  if (primary) return primary;
+
+  const fallback = process.env.CREDENTIAL_ENCRYPTION_KEY?.trim();
+  if (fallback) return fallback;
+
+  return '';
+}
 
 function getKey(): Buffer {
-  if (!SECRET) {
-    throw new Error('ENCRYPTION_SECRET is not configured');
+  const secret = resolveSecret();
+
+  if (!secret) {
+    throw new Error('Encryption secret is not configured (set ENCRYPTION_SECRET or CREDENTIAL_ENCRYPTION_KEY)');
   }
 
-  return createHash('sha256').update(SECRET).digest();
+  return createHash('sha256').update(secret).digest();
 }
 
 export function encryptCredential(plaintext: string): string {

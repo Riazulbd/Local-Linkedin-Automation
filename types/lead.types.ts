@@ -2,6 +2,7 @@ export type LeadStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipp
 
 export interface Lead {
   id: string;
+  user_id?: string | null;
   profile_id: string;
   linkedin_url: string;
   first_name: string | null;
@@ -18,6 +19,7 @@ export interface Lead {
 }
 
 export interface CreateLeadInput {
+  user_id?: string;
   profile_id: string;
   linkedin_url: string;
   first_name?: string;
