@@ -1,44 +1,133 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
 export type ConnectionDegree = '1st' | '2nd' | '3rd' | 'pending' | 'not_connected' | 'unknown';
 
-export async function detectConnectionState(page: Page): Promise<ConnectionDegree> {
-  const degreeBadgeSelectors = [
-    '.dist-value',
-    '[data-test-connection-degree]',
-    '.pv-top-card--list-bullet li',
+export interface ConnectionState {
+  degree: ConnectionDegree;
+  canMessage: boolean;
+  canConnect: boolean;
+  shouldFollow: boolean;
+  displayName: string;
+}
+
+async function getProfileHeader(page: Page): Promise<Locator | null> {
+  const selectors = [
+    '.pv-top-card',
+    'div.ph5.pb5',
+    '.scaffold-layout__main .pv-text-details__left-panel',
   ];
 
-  for (const selector of degreeBadgeSelectors) {
+  for (const selector of selectors) {
     try {
-      const badge = page.locator(selector).first();
-      const text = (await badge.textContent({ timeout: 2000 })) || '';
-      if (!text) continue;
-
-      if (text.includes('1st')) return '1st';
-      if (text.includes('2nd')) return '2nd';
-      if (text.includes('3rd')) return '3rd';
+      const container = page.locator(selector).first();
+      if (await container.isVisible({ timeout: 1500 })) {
+        return container;
+      }
     } catch {
-      // continue trying selectors
+      // continue
     }
   }
 
-  const pendingBtn = page.locator('button:has-text("Pending")').first();
-  if (await pendingBtn.isVisible({ timeout: 1000 }).catch(() => false)) return 'pending';
+  return null;
+}
 
-  const connectBtn = page.locator('button:has-text("Connect")').first();
-  if (await connectBtn.isVisible({ timeout: 1000 }).catch(() => false)) return 'not_connected';
+async function isVisible(root: Page | Locator, selector: string, timeout: number): Promise<boolean> {
+  return root
+    .locator(selector)
+    .first()
+    .isVisible({ timeout })
+    .catch(() => false);
+}
 
-  const messageBtn = page.locator('button:has-text("Message")').first();
-  if (await messageBtn.isVisible({ timeout: 1000 }).catch(() => false)) return '1st';
+export async function detectConnectionState(page: Page): Promise<ConnectionState> {
+  console.log('[ConnectionDetector] Reading profile connection state (scoped)');
 
-  return 'unknown';
+  const header = await getProfileHeader(page);
+  const scopedRoot = header ?? page;
+
+  const nameSelectors = [
+    'h1.inline.t-24',
+    'h1[class*="inline"][class*="t-24"]',
+    '.text-heading-xlarge',
+  ];
+
+  let displayName = 'Unknown';
+  for (const selector of nameSelectors) {
+    try {
+      const node = scopedRoot.locator(selector).first();
+      const text = (await node.textContent({ timeout: 1200 }))?.trim();
+      if (!text) continue;
+      displayName = text;
+      break;
+    } catch {
+      // continue
+    }
+  }
+
+  let degree: ConnectionDegree = 'unknown';
+  const degreeSelectors = [
+    '.dist-value',
+    '[data-test-connection-degree]',
+    'span:has-text("connection")',
+    'li:has-text("connection")',
+  ];
+
+  for (const selector of degreeSelectors) {
+    try {
+      const node = scopedRoot.locator(selector).first();
+      const text = (await node.textContent({ timeout: 1200 }))?.toLowerCase() ?? '';
+      if (!text) continue;
+
+      if (text.includes('1st')) {
+        degree = '1st';
+        break;
+      }
+      if (text.includes('2nd')) {
+        degree = '2nd';
+        break;
+      }
+      if (text.includes('3rd')) {
+        degree = '3rd';
+        break;
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  if (degree === 'unknown' && (await isVisible(scopedRoot, 'button:has-text("Pending")', 600))) {
+    degree = 'pending';
+  }
+
+  if (
+    degree === 'unknown' &&
+    (await isVisible(scopedRoot, 'button[aria-label*="Invite" i]', 600)) &&
+    !(await isVisible(scopedRoot, 'button:has-text("Message")', 400))
+  ) {
+    degree = 'not_connected';
+  }
+
+  if (degree === 'unknown' && (await isVisible(scopedRoot, 'button:has-text("Message")', 600))) {
+    degree = '1st';
+  }
+
+  const canMessage = degree === '1st';
+  const canConnect = degree === '2nd' || degree === '3rd' || degree === 'not_connected';
+  const shouldFollow = degree === '3rd';
+
+  return {
+    degree,
+    canMessage,
+    canConnect,
+    shouldFollow,
+    displayName,
+  };
 }
 
 export async function updateLeadConnectionState(
   supabase: any,
   leadId: string,
-  state: ConnectionDegree
+  state: ConnectionState
 ): Promise<void> {
   const { data } = await supabase
     .from('leads')
@@ -53,13 +142,17 @@ export async function updateLeadConnectionState(
 
   const nextExtra = {
     ...currentExtra,
-    connection_degree: state,
+    connection_degree: state.degree,
+    can_message: state.canMessage,
+    can_connect: state.canConnect,
+    should_follow: state.shouldFollow,
+    profile_name: state.displayName,
   };
 
   await supabase
     .from('leads')
     .update({
-      connection_degree: state,
+      connection_degree: state.degree,
       extra_data: nextExtra,
       updated_at: new Date().toISOString(),
     })

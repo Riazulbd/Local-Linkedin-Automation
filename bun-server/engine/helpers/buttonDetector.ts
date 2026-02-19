@@ -18,46 +18,27 @@ export type ConnectionStrategy =
   | { action: 'follow'; reason: '3rd_degree_no_connect' }
   | { action: 'skip'; reason: 'pending' | 'already_connected' | 'no_action_available' };
 
-const MESSAGE_SELECTORS = [
-  'button[aria-label^="Message "]',
-  'button[aria-label*="Message" i]:has-text("Message")',
-  'button.artdeco-button:has-text("Message")',
-  'button:has-text("Message")',
-];
+const ACTION_CONTAINER_SELECTORS = [
+  'ul[class*="vnNIgiulPPXqQrqJbqGMhhdCMWIdGnxmPJhlHU"] ~ div.nGOMxDwRwzbhggBWRdqlNUbgklupeTaZPLZBo',
+  'div.nGOMxDwRwzbhggBWRdqlNUbgklupeTaZPLZBo',
+  'div.QibvhqjSyNICBfzkqMTgfyDVOTsCUYeyHk',
+  'div.entry-point',
+  '.pv-top-card',
+] as const;
 
-const CONNECT_SELECTORS = [
-  'button[aria-label^="Invite "]',
-  'button[aria-label*="Invite" i]:has-text("Connect")',
-  'button.artdeco-button--primary:has-text("Connect")',
+const OPEN_DROPDOWN_SELECTORS = [
+  'div.artdeco-dropdown__content[aria-hidden="false"]',
+  'div.artdeco-dropdown__content:not([aria-hidden="true"])',
+  'div.bdRelTpFILSnaGkmJSoyZfNhXHSDqnSFNTY[aria-hidden="false"]',
+  'div.artdeco-dropdown__content-inner',
+] as const;
+
+const CONNECT_IN_DROPDOWN_SELECTORS = [
+  'div[role="button"][aria-label*="Invite" i]',
+  'div[role="button"]:has-text("Connect")',
+  'div.artdeco-dropdown__item:has-text("Connect")',
   'button:has-text("Connect")',
-  '[data-control-name="connect"]',
-];
-
-const PENDING_SELECTORS = [
-  'button[aria-label*="Pending" i]',
-  'button:has-text("Pending")',
-];
-
-const FOLLOWING_SELECTORS = [
-  'button[aria-label*="Following" i]',
-  'button:has-text("Following")',
-];
-
-const MORE_SELECTORS = [
-  'main button[aria-label="More actions"]',
-  'button[aria-label="More actions"]',
-  'button[aria-label*="More actions" i]',
-  'main button.artdeco-dropdown__trigger:has-text("More")',
-  'button.artdeco-dropdown__trigger:has-text("More")',
-];
-
-const CONNECT_IN_MORE_SELECTORS = [
-  'div[role="menu"] button:has-text("Connect")',
-  'div[role="menu"] [role="menuitem"]:has-text("Connect")',
-  '.artdeco-dropdown__content-inner button:has-text("Connect")',
-  '.artdeco-dropdown__content-inner [role="menuitem"]:has-text("Connect")',
-  'li[role="menuitem"]:has-text("Connect")',
-];
+] as const;
 
 async function isEnabled(locator: Locator): Promise<boolean> {
   const disabled = await locator.getAttribute('disabled').catch(() => null);
@@ -65,84 +46,210 @@ async function isEnabled(locator: Locator): Promise<boolean> {
   return disabled === null && ariaDisabled !== 'true';
 }
 
-async function findVisible(
-  page: Page,
+async function firstVisibleInScope(
+  root: Page | Locator,
   selectors: readonly string[],
   timeoutMs: number
 ): Promise<Locator | null> {
-  const maxCandidatesPerSelector = 20;
+  const maxCandidatesPerSelector = 25;
 
   for (const selector of selectors) {
     try {
-      const root = page.locator(selector);
-      const count = Math.min(await root.count(), maxCandidatesPerSelector);
+      const set = root.locator(selector);
+      const count = Math.min(await set.count(), maxCandidatesPerSelector);
+      if (count === 0) continue;
 
-      for (let i = 0; i < count; i += 1) {
-        const locator = root.nth(i);
-        const candidateTimeout = i === 0 ? timeoutMs : 250;
-        const visible = await locator.isVisible({ timeout: candidateTimeout }).catch(() => false);
-        if (!visible) continue;
-        const isSearch = await locator
-          .evaluate((el: Element) => {
-            const isSearchInput =
-              el.matches('input[role="combobox"][aria-label*="Search" i]') ||
-              el.matches('input.search-global-typeahead__input') ||
-              el.matches('[data-view-name="search-global-typeahead-input"]');
-            const inSearchContainer = Boolean(
-              el.closest('.search-global-typeahead, .global-nav__search, [data-view-name*="search-global-typeahead"]')
-            );
-            return isSearchInput || inSearchContainer;
-          })
+      for (let index = 0; index < count; index += 1) {
+        const candidate = set.nth(index);
+        const visible = await candidate
+          .isVisible({ timeout: index === 0 ? timeoutMs : 300 })
           .catch(() => false);
-        if (isSearch) continue;
-        if (!(await isEnabled(locator))) continue;
-        return locator;
+        if (!visible) continue;
+        if (!(await isEnabled(candidate))) continue;
+        return candidate;
       }
     } catch {
-      // try next selector
+      // Continue with next selector.
     }
   }
 
   return null;
 }
 
-export async function findConnectInMoreMenu(page: Page): Promise<Locator | null> {
-  return findVisible(page, CONNECT_IN_MORE_SELECTORS, 1200);
+async function looksLikeActionContainer(container: Locator): Promise<boolean> {
+  const hasEntryPoint = (await container.locator('div.entry-point').count().catch(() => 0)) > 0;
+  const hasDropdown = (await container.locator('div.artdeco-dropdown').count().catch(() => 0)) > 0;
+  const hasMessageButton = (await container.locator('button[aria-label^="Message"]').count().catch(() => 0)) > 0;
+  return hasEntryPoint || hasDropdown || hasMessageButton;
 }
 
-/**
- * Scans all relevant profile action buttons and peeks inside "More actions"
- * to detect hidden "Connect" options for 3rd-degree profiles.
- */
-export async function detectProfileButtons(page: Page, firstName: string): Promise<DetectedButtons> {
-  console.log(`[ButtonDetector] scanning action buttons for "${firstName}"`);
+async function getActionContainer(page: Page): Promise<Locator | null> {
+  console.log('[ButtonDetector] Searching for profile action container...');
 
-  const escapedName = firstName.replace(/"/g, '').trim();
-  const messageSelectors = escapedName
-    ? ([`button[aria-label^="Message ${escapedName}" i]`, ...MESSAGE_SELECTORS] as const)
-    : MESSAGE_SELECTORS;
-  const connectSelectors = escapedName
-    ? ([`button[aria-label^="Invite ${escapedName}" i]`, ...CONNECT_SELECTORS] as const)
-    : CONNECT_SELECTORS;
+  try {
+    const connectionsUl = page.locator('ul').filter({ hasText: /connections/i }).first();
+    if (await connectionsUl.isVisible({ timeout: 2000 })) {
+      const sibling = connectionsUl.locator('xpath=following-sibling::div[1]').first();
+      if (await sibling.isVisible({ timeout: 1000 })) {
+        if (await looksLikeActionContainer(sibling)) {
+          console.log('[ButtonDetector] Found action container via connections sibling');
+          return sibling;
+        }
+      }
+    }
+  } catch (error) {
+    console.log(
+      `[ButtonDetector] Strategy 1 failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  try {
+    const entryPoint = page.locator('div.entry-point').first();
+    if (await entryPoint.isVisible({ timeout: 2000 })) {
+      const parent = entryPoint
+        .locator('xpath=ancestor::div[descendant::div[contains(@class,"artdeco-dropdown")]][1]')
+        .first();
+      if (await parent.isVisible({ timeout: 1000 })) {
+        console.log('[ButtonDetector] Found action container via entry-point parent');
+        return parent;
+      }
+    }
+  } catch (error) {
+    console.log(
+      `[ButtonDetector] Strategy 2 failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  for (const selector of ACTION_CONTAINER_SELECTORS) {
+    try {
+      const candidate = page.locator(selector).first();
+      if (!(await candidate.isVisible({ timeout: 1000 }).catch(() => false))) continue;
+
+      if (await looksLikeActionContainer(candidate)) {
+        console.log(`[ButtonDetector] Found action container via selector: ${selector}`);
+        return candidate;
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  console.error('[ButtonDetector] Action container not found');
+  return null;
+}
+
+async function findOpenDropdown(page: Page): Promise<Locator | null> {
+  return firstVisibleInScope(page, OPEN_DROPDOWN_SELECTORS, 1500);
+}
+
+export async function findConnectInMoreMenu(page: Page): Promise<Locator | null> {
+  const dropdown = await findOpenDropdown(page);
+  if (!dropdown) return null;
+  return firstVisibleInScope(dropdown, CONNECT_IN_DROPDOWN_SELECTORS, 1000);
+}
+
+export async function detectProfileButtons(page: Page, firstName: string): Promise<DetectedButtons> {
+  console.log('[ButtonDetector] Starting scoped button detection...');
 
   const buttons: DetectedButtons = {
-    message: await findVisible(page, messageSelectors, 1000),
-    connect: await findVisible(page, connectSelectors, 1000),
+    message: null,
+    connect: null,
     connectInMoreMenu: null,
-    more: await findVisible(page, MORE_SELECTORS, 1000),
-    pending: await findVisible(page, PENDING_SELECTORS, 700),
-    following: await findVisible(page, FOLLOWING_SELECTORS, 700),
+    more: null,
+    pending: null,
+    following: null,
   };
+
+  const actionContainer = await getActionContainer(page);
+  if (!actionContainer) {
+    return buttons;
+  }
+
+  const cleanFirstName = firstName.replace(/"/g, '').trim();
+  const messageSelectors = [
+    cleanFirstName ? `button[aria-label^="Message ${cleanFirstName}" i]` : '',
+    'button[aria-label^="Message" i]',
+    'button.artdeco-button--primary:has-text("Message")',
+    'div.entry-point button:has-text("Message")',
+  ].filter(Boolean);
+
+  buttons.message = await firstVisibleInScope(actionContainer, messageSelectors, 1000);
+  if (buttons.message) {
+    console.log('[ButtonDetector] Found Message button');
+  }
+
+  const directConnectSelectors = [
+    cleanFirstName ? `button[aria-label^="Invite ${cleanFirstName}" i]` : '',
+    'button[aria-label*="Invite" i]:has-text("Connect")',
+    'button.artdeco-button--primary:has-text("Connect")',
+  ].filter(Boolean);
+
+  buttons.connect = await firstVisibleInScope(actionContainer, directConnectSelectors, 1000);
+  if (buttons.connect) {
+    console.log('[ButtonDetector] Found direct Connect button');
+  }
+
+  buttons.pending = await firstVisibleInScope(
+    actionContainer,
+    ['button[aria-label*="Pending" i]', 'button:has-text("Pending")'],
+    700
+  );
+  if (buttons.pending) {
+    console.log('[ButtonDetector] Found Pending button');
+  }
+
+  buttons.following = await firstVisibleInScope(
+    actionContainer,
+    ['button[aria-label*="Following" i]', 'button:has-text("Following")'],
+    700
+  );
+  if (buttons.following) {
+    console.log('[ButtonDetector] Found Following button');
+  }
+
+  buttons.more = await firstVisibleInScope(
+    actionContainer,
+    [
+      'button[aria-label="More actions"]',
+      'button.artdeco-dropdown__trigger:has-text("More")',
+      'div.artdeco-dropdown button:has-text("More")',
+    ],
+    1000
+  );
+  if (buttons.more) {
+    console.log('[ButtonDetector] Found More button');
+  }
 
   if (buttons.more) {
     try {
       await buttons.more.click({ timeout: 2000 });
       await microDelay();
 
-      buttons.connectInMoreMenu = await findConnectInMoreMenu(page);
+      const dropdown = await findOpenDropdown(page);
+      if (dropdown) {
+        buttons.connectInMoreMenu = await firstVisibleInScope(dropdown, CONNECT_IN_DROPDOWN_SELECTORS, 1000);
+        if (!buttons.connectInMoreMenu) {
+          buttons.connectInMoreMenu = await findConnectInMoreMenu(page);
+        }
+
+        if (buttons.connectInMoreMenu) {
+          console.log('[ButtonDetector] Found Connect in More dropdown');
+        }
+
+        const unfollowOption = await dropdown
+          .locator('div[role="button"][aria-label*="Unfollow" i]')
+          .first()
+          .isVisible({ timeout: 500 })
+          .catch(() => false);
+        if (unfollowOption) {
+          console.log('[ButtonDetector] Unfollow option present (profile is followed)');
+        }
+      } else {
+        console.log('[ButtonDetector] More dropdown did not open');
+      }
     } catch (error) {
-      console.log(
-        `[ButtonDetector] failed to peek inside More menu: ${
+      console.error(
+        `[ButtonDetector] Failed to inspect More dropdown: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -152,7 +259,7 @@ export async function detectProfileButtons(page: Page, firstName: string): Promi
     }
   }
 
-  console.log('[ButtonDetector] result', {
+  console.log('[ButtonDetector] Scan complete:', {
     hasMessage: Boolean(buttons.message),
     hasConnect: Boolean(buttons.connect),
     hasConnectInMore: Boolean(buttons.connectInMoreMenu),
@@ -172,10 +279,6 @@ export function determineConnectionStrategy(
     return { action: 'skip', reason: 'pending' };
   }
 
-  if (buttons.message && !buttons.connect && !buttons.connectInMoreMenu) {
-    return { action: 'message', button: buttons.message };
-  }
-
   if (buttons.connect) {
     return { action: 'connect_direct', button: buttons.connect };
   }
@@ -188,13 +291,40 @@ export function determineConnectionStrategy(
     };
   }
 
-  if (connectionDegree === '1st') {
+  if (buttons.message && !buttons.connect && !buttons.connectInMoreMenu) {
     return { action: 'skip', reason: 'already_connected' };
   }
 
-  if (connectionDegree === '3rd') {
+  if (connectionDegree === '3rd' && !buttons.connect && !buttons.connectInMoreMenu) {
     return { action: 'follow', reason: '3rd_degree_no_connect' };
   }
 
   return { action: 'skip', reason: 'no_action_available' };
+}
+
+export async function debugButtonScoping(page: Page): Promise<void> {
+  console.log('\n=== BUTTON SCOPING DEBUG ===');
+
+  const connectionsUl = page.locator('ul').filter({ hasText: /connections/i }).first();
+  const hasConnectionsUl = await connectionsUl.isVisible({ timeout: 1000 }).catch(() => false);
+  console.log(`Connections UL: ${hasConnectionsUl ? 'FOUND' : 'NOT FOUND'}`);
+
+  if (hasConnectionsUl) {
+    const sibling = connectionsUl.locator('xpath=following-sibling::div[1]').first();
+    const hasSiblingContainer = await sibling.isVisible({ timeout: 1000 }).catch(() => false);
+    console.log(`Sibling action container: ${hasSiblingContainer ? 'FOUND' : 'NOT FOUND'}`);
+
+    if (hasSiblingContainer) {
+      const entryPoints = await sibling.locator('div.entry-point').count().catch(() => 0);
+      const dropdowns = await sibling.locator('div.artdeco-dropdown').count().catch(() => 0);
+      console.log(`  entry-point count: ${entryPoints}`);
+      console.log(`  artdeco-dropdown count: ${dropdowns}`);
+    }
+  }
+
+  const allButtonsCount = await page.locator('button').count().catch(() => 0);
+  const messageButtonsCount = await page.locator('button:has-text("Message")').count().catch(() => 0);
+  console.log(`Global button count: ${allButtonsCount}`);
+  console.log(`Global Message button count: ${messageButtonsCount}`);
+  console.log('============================\n');
 }

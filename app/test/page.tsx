@@ -6,6 +6,10 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -13,6 +17,7 @@ import {
   Select,
   Snackbar,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import { PlayArrow, Stop } from '@mui/icons-material';
@@ -28,6 +33,8 @@ interface ProfileOption {
 
 type TestAction = 'visit' | 'connect' | 'message' | 'follow';
 
+const DEFAULT_MESSAGE_TEMPLATE = 'Hi {{firstName}}, this is a test message from the automation lab!';
+
 export default function TestLabPage() {
   const supabase = createClient();
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -38,6 +45,8 @@ export default function TestLabPage() {
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
   const [showWarn, setShowWarn] = useState(false);
+  const [showMessageDialog, setShowMessageDialog] = useState(false);
+  const [messageInput, setMessageInput] = useState(DEFAULT_MESSAGE_TEMPLATE);
 
   useEffect(() => {
     let mounted = true;
@@ -77,12 +86,7 @@ export default function TestLabPage() {
     [profiles, selectedProfile]
   );
 
-  const runTest = async (action: TestAction) => {
-    if (!selectedLead || !selectedProfile) {
-      setShowWarn(true);
-      return;
-    }
-
+  const executeTest = async (action: TestAction, messageTemplate?: string) => {
     setError('');
     setTesting(true);
     try {
@@ -93,7 +97,7 @@ export default function TestLabPage() {
           action,
           profileId: selectedProfile,
           leadId: selectedLead,
-          messageTemplate: 'Hi {{firstName}}, this is a test message from the automation lab!',
+          messageTemplate,
         }),
       });
 
@@ -108,6 +112,27 @@ export default function TestLabPage() {
     } finally {
       setTesting(false);
     }
+  };
+
+  const runTest = async (action: TestAction) => {
+    if (!selectedLead || !selectedProfile) {
+      setShowWarn(true);
+      return;
+    }
+
+    if (action === 'message') {
+      setShowMessageDialog(true);
+      return;
+    }
+
+    await executeTest(action);
+  };
+
+  const submitMessageTest = async () => {
+    const trimmed = messageInput.trim();
+    if (!trimmed) return;
+    setShowMessageDialog(false);
+    await executeTest('message', trimmed);
   };
 
   return (
@@ -189,7 +214,7 @@ export default function TestLabPage() {
               variant="contained"
               color="primary"
               startIcon={testing ? <Stop /> : <PlayArrow />}
-              onClick={() => runTest('visit')}
+              onClick={() => void runTest('visit')}
               disabled={!selectedLead || !selectedProfile || testing}
               size="large"
             >
@@ -199,7 +224,7 @@ export default function TestLabPage() {
               variant="contained"
               color="success"
               startIcon={<PlayArrow />}
-              onClick={() => runTest('connect')}
+              onClick={() => void runTest('connect')}
               disabled={!selectedLead || !selectedProfile || testing}
               size="large"
             >
@@ -209,7 +234,7 @@ export default function TestLabPage() {
               variant="contained"
               color="info"
               startIcon={<PlayArrow />}
-              onClick={() => runTest('message')}
+              onClick={() => void runTest('message')}
               disabled={!selectedLead || !selectedProfile || testing}
               size="large"
             >
@@ -219,7 +244,7 @@ export default function TestLabPage() {
               variant="contained"
               color="warning"
               startIcon={<PlayArrow />}
-              onClick={() => runTest('follow')}
+              onClick={() => void runTest('follow')}
               disabled={!selectedLead || !selectedProfile || testing}
               size="large"
             >
@@ -239,6 +264,39 @@ export default function TestLabPage() {
           </Paper>
         )}
       </Stack>
+
+      <Dialog
+        open={showMessageDialog}
+        onClose={() => {
+          if (!testing) setShowMessageDialog(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Enter Test Message</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            multiline
+            minRows={4}
+            fullWidth
+            label="Message Template"
+            placeholder="Hi {{firstName}}, this is a test message..."
+            helperText="Variables supported: {{firstName}}, {{lastName}}, {{company}}"
+            value={messageInput}
+            onChange={(event) => setMessageInput(event.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowMessageDialog(false)} disabled={testing}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void submitMessageTest()} disabled={testing || !messageInput.trim()}>
+            Send Test Message
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar open={showWarn} autoHideDuration={2500} onClose={() => setShowWarn(false)}>
         <Alert severity="warning" variant="filled" onClose={() => setShowWarn(false)} sx={{ width: '100%' }}>

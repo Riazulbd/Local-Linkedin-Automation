@@ -8,6 +8,7 @@ import {
 } from '../helpers/buttonDetector';
 import { dismissPopups, withPopupGuard } from '../helpers/popupGuard';
 import { humanClick, humanType, microDelay, thinkingPause } from '../helpers/humanBehavior';
+import { safeInputSelector } from '../helpers/selectorHelpers';
 import { interpolate } from '../helpers/templateEngine';
 import type { ActionResult, Lead } from '../../../types';
 
@@ -28,10 +29,10 @@ const ADD_NOTE_SELECTORS = [
 ];
 
 const NOTE_TEXTAREA_SELECTORS = [
-  'textarea[name="message"]',
-  '#custom-message',
-  'textarea[aria-label*="note" i]',
-  'textarea',
+  safeInputSelector('textarea[name="message"]'),
+  safeInputSelector('#custom-message'),
+  safeInputSelector('textarea[aria-label*="note" i]'),
+  safeInputSelector('textarea'),
 ];
 
 const SEND_WITH_NOTE_SELECTORS = [
@@ -288,30 +289,30 @@ export async function sendConnection(
   });
 
   const buttons = await detectProfileButtons(page, firstName);
-  const connectionDegree = await detectConnectionState(page);
-  const strategy = determineConnectionStrategy(buttons, connectionDegree);
+  const connectionState = await detectConnectionState(page);
+  const strategy = determineConnectionStrategy(buttons, connectionState.degree);
 
   debug('strategy selected', {
     strategy: strategy.action,
-    degree: connectionDegree,
+    degree: connectionState.degree,
   });
 
   if (strategy.action === 'skip') {
     if (strategy.reason === 'pending') {
-      return { success: true, action: 'already_pending', data: { degree: connectionDegree } };
+      return { success: true, action: 'already_pending', data: { degree: connectionState.degree } };
     }
     if (strategy.reason === 'already_connected') {
-      return { success: true, action: 'already_connected', data: { degree: connectionDegree } };
+      return { success: true, action: 'already_connected', data: { degree: connectionState.degree } };
     }
     return {
       success: true,
       action: 'skipped_no_action',
-      data: { degree: connectionDegree },
+      data: { degree: connectionState.degree },
     };
   }
 
   if (strategy.action === 'message') {
-    return { success: true, action: 'already_connected', data: { degree: connectionDegree } };
+    return { success: true, action: 'already_connected', data: { degree: connectionState.degree } };
   }
 
   if (strategy.action === 'follow') {
@@ -320,14 +321,14 @@ export async function sendConnection(
       return {
         success: true,
         action: 'followed_instead',
-        data: { reason: strategy.reason, degree: connectionDegree },
+        data: { reason: strategy.reason, degree: connectionState.degree },
       };
     }
     return {
       success: false,
       action: followResult.action || 'follow_fallback_failed',
       error: followResult.error || 'FOLLOW_FALLBACK_FAILED',
-      data: { reason: strategy.reason, degree: connectionDegree },
+      data: { reason: strategy.reason, degree: connectionState.degree },
     };
   }
 
@@ -343,6 +344,6 @@ export async function sendConnection(
     success: false,
     action: 'unknown_strategy',
     error: 'UNHANDLED_CONNECTION_STRATEGY',
-    data: { degree: connectionDegree },
+    data: { degree: connectionState.degree },
   };
 }

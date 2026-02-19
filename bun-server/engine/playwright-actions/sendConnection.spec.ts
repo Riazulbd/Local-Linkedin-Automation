@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import { actionPause, humanClick, humanType, microPause, thinkingPause } from '../helpers/humanBehavior';
 import { detectRateLimit, dismissPopups, findVisibleButton } from '../helpers/linkedinGuard';
+import { safeInputSelector } from '../helpers/selectorHelpers';
 
 const CONNECT_SELECTORS = [
   'button:has-text("Connect")',
@@ -67,7 +68,7 @@ export async function sendConnectionAction(
       await humanClick(page, addNoteBtn.locator);
       await thinkingPause();
 
-      const noteBox = page.locator('textarea[name="message"]').first();
+      const noteBox = page.locator(safeInputSelector('textarea[name="message"]')).first();
       if (await noteBox.isVisible({ timeout: 2000 })) {
         await humanType(page, noteBox, input.note.slice(0, 300));
       }

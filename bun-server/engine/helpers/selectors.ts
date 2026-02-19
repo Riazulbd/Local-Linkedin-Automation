@@ -1,3 +1,5 @@
+import { safeContentEditableSelector, safeInputSelector } from './selectorHelpers';
+
 export const LI = {
   // ── Profile Actions ──────────────────────────────────────────
   followBtn: [
@@ -56,9 +58,9 @@ export const LI = {
     'button[aria-label="Add a note"]',
   ],
   connectionNoteTextarea: [
-    'textarea[name="message"]',
-    '#custom-message',
-    'textarea[placeholder*="note"]',
+    safeInputSelector('textarea[name="message"]'),
+    safeInputSelector('#custom-message'),
+    safeInputSelector('textarea[placeholder*="note"]'),
   ],
   sendInviteBtn: [
     'button[aria-label="Send invitation"]',
@@ -69,12 +71,16 @@ export const LI = {
   // ── Messaging ─────────────────────────────────────────────────
   messageComposeBox: [
     // Primary - specific to open conversation bubble
-    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) .msg-form__contenteditable[contenteditable="true"]',
-    '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) [role="textbox"][contenteditable="true"]',
+    safeContentEditableSelector(
+      '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) .msg-form__contenteditable[contenteditable="true"]'
+    ),
+    safeContentEditableSelector(
+      '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) [role="textbox"][contenteditable="true"]'
+    ),
 
     // Fallbacks
-    '.msg-overlay-conversation-bubble [contenteditable="true"]',
-    '.msg-form__contenteditable[contenteditable="true"]',
+    safeContentEditableSelector('.msg-overlay-conversation-bubble [contenteditable="true"]'),
+    safeContentEditableSelector('.msg-form__contenteditable[contenteditable="true"]'),
   ],
   messageComposeActivator: [
     '.msg-overlay-conversation-bubble:not(.msg-overlay-conversation-bubble--is-minimized) .msg-form__placeholder',

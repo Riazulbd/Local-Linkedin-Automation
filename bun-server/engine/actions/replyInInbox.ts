@@ -7,6 +7,7 @@ import {
   dismissPopups,
   findVisibleButton,
 } from '../helpers/linkedinGuard';
+import { safeContentEditableSelector } from '../helpers/selectorHelpers';
 
 const THREAD_SELECTORS = (threadId?: string, participantName?: string) => [
   threadId ? `[data-entity-urn="${threadId}"]` : '',
@@ -16,9 +17,9 @@ const THREAD_SELECTORS = (threadId?: string, participantName?: string) => [
 ].filter(Boolean);
 
 const MESSAGE_INPUT_SELECTORS = [
-  '.msg-form__contenteditable',
-  '[contenteditable="true"][role="textbox"]',
-  '[data-artdeco-is-focused] [contenteditable]',
+  safeContentEditableSelector('.msg-form__contenteditable'),
+  safeContentEditableSelector('[contenteditable="true"][role="textbox"]'),
+  safeContentEditableSelector('[data-artdeco-is-focused] [contenteditable]'),
 ];
 
 const SEND_BUTTON_SELECTORS = [

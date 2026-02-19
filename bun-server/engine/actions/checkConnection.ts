@@ -9,12 +9,12 @@ export async function checkConnection(
 ): Promise<ActionResult & { isConnected: boolean }> {
   await dismissPopups(page);
   const state = await detectConnectionState(page);
-  const is1st = state === '1st';
+  const is1st = state.degree === '1st';
 
   return {
     success: true,
     isConnected: is1st,
     action: is1st ? 'connected' : 'not_connected',
-    data: { status: state },
+    data: { status: state.degree, connectionState: state },
   };
 }

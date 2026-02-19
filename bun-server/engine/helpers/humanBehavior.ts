@@ -1,8 +1,76 @@
 import type { Locator, Page } from 'playwright';
+import { getSupabaseClient } from '../../supabase';
 
 interface Point {
   x: number;
   y: number;
+}
+
+const SPEED_MULTIPLIER_REFRESH_MS = 30_000;
+const MIN_EFFECTIVE_DELAY_MS = 25;
+const DEFAULT_SPEED_MULTIPLIER = 1;
+
+let cachedSpeedMultiplier = DEFAULT_SPEED_MULTIPLIER;
+let lastSpeedMultiplierFetchAt = 0;
+let speedMultiplierFetchPromise: Promise<number> | null = null;
+
+function normalizeSpeedMultiplier(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SPEED_MULTIPLIER;
+  }
+  return parsed;
+}
+
+async function fetchSpeedMultiplierFromSettings(): Promise<number> {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('speed_multiplier')
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      return cachedSpeedMultiplier;
+    }
+
+    const next = normalizeSpeedMultiplier(
+      (data as { speed_multiplier?: number | null } | null)?.speed_multiplier
+    );
+    cachedSpeedMultiplier = next;
+    return next;
+  } catch {
+    return cachedSpeedMultiplier;
+  }
+}
+
+async function getSpeedMultiplier(force = false): Promise<number> {
+  const now = Date.now();
+  const isFresh = now - lastSpeedMultiplierFetchAt < SPEED_MULTIPLIER_REFRESH_MS;
+  if (!force && isFresh) {
+    return cachedSpeedMultiplier;
+  }
+
+  if (!speedMultiplierFetchPromise) {
+    speedMultiplierFetchPromise = fetchSpeedMultiplierFromSettings()
+      .then((value) => {
+        cachedSpeedMultiplier = normalizeSpeedMultiplier(value);
+        lastSpeedMultiplierFetchAt = Date.now();
+        return cachedSpeedMultiplier;
+      })
+      .finally(() => {
+        speedMultiplierFetchPromise = null;
+      });
+  }
+
+  return speedMultiplierFetchPromise;
+}
+
+function applySpeedMultiplier(ms: number, multiplier: number): number {
+  const safeMultiplier = normalizeSpeedMultiplier(multiplier);
+  const scaled = Math.round(ms / safeMultiplier);
+  return Math.max(MIN_EFFECTIVE_DELAY_MS, scaled);
 }
 
 // ---------------------------------------------------------------------
@@ -12,8 +80,16 @@ export function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-export async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+export async function sleep(ms: number, options?: { applySpeed?: boolean }): Promise<void> {
+  const shouldApplySpeed = options?.applySpeed ?? true;
+  let delayMs = Math.max(0, Math.round(ms));
+
+  if (shouldApplySpeed) {
+    const multiplier = await getSpeedMultiplier();
+    delayMs = applySpeedMultiplier(delayMs, multiplier);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 export async function microPause(): Promise<void> {
@@ -274,3 +350,5 @@ export async function simulateProfileReading(
     await idleMovement(page, randomBetween(900, 1800));
   }
 }
+
+void getSpeedMultiplier(true);

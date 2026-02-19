@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { WorkflowExecutor } from './engine/WorkflowExecutor';
-import { CampaignExecutor } from './engine/CampaignExecutor';
+import { CampaignExecutor, requestAbort } from './engine/CampaignExecutor';
 import { UniboxSyncer } from './engine/UniboxSyncer';
 import { LoginManager } from './engine/LoginManager';
 import { AdsPowerManager } from './engine/AdsPowerManager';
@@ -348,8 +348,36 @@ function buildServer(
       }
 
       if (method === 'POST' && url.pathname === '/stop') {
+        const body = (await readJsonBody(req as any)) as {
+          runId?: string;
+          profileId?: string;
+          linkedinProfileId?: string;
+          campaignId?: string;
+        };
+        const profileId = body.profileId || body.linkedinProfileId;
+
+        if (profileId) {
+          requestAbort(profileId);
+        }
+
         await executor.stop();
-        writeJson(res, 200, { stopped: true }, requestOrigin);
+
+        if (body.campaignId) {
+          await campaignExecutor.stop({ campaignId: body.campaignId });
+        }
+
+        writeJson(
+          res,
+          200,
+          {
+            stopped: true,
+            runId: body.runId ?? null,
+            profileId: profileId ?? null,
+            campaignId: body.campaignId ?? null,
+            campaignStopRequested: Boolean(body.campaignId),
+          },
+          requestOrigin
+        );
         return;
       }
 
