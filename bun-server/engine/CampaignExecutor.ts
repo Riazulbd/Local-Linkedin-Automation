@@ -3,15 +3,22 @@ import { supabase } from '../lib/supabase';
 import { Logger } from '../lib/logger';
 import { checkConnection } from './actions/checkConnection';
 import { followProfile } from './actions/followProfile';
-import { sendConnection } from './actions/sendConnection';
+import { executeConnectAction } from './actions/sendConnection';
 import { sendMessage } from './actions/sendMessage';
 import { syncInbox } from './actions/syncInbox';
 import { visitProfile } from './actions/visitProfile';
+import {
+  injectCursor,
+  visionCheckConnectionAccepted,
+  visionFollowProfile,
+  visionSendConnection,
+} from './helpers/visionClicker';
 import { dismissPopups, detectLoggedOut } from './helpers/linkedinGuard';
 import { betweenLeadsPause, actionPause, randomBetween } from './helpers/humanBehavior';
 import { interpolate } from './helpers/templateEngine';
 import { browserSessionManager } from './BrowserSessionManager';
 import { SessionHealer } from './SessionHealer';
+import { LiveEventLogger } from '../lib/LiveEventLogger';
 import type { CampaignStep, Lead } from '../../types';
 
 // Active execution abort map keyed by profileId.
@@ -37,6 +44,25 @@ interface ProgressWithLead {
   status: string;
   next_action_at: string | null;
   leads: Lead | null;
+}
+
+async function prepareProfileForVision(
+  page: import('playwright').Page,
+  lead: Lead,
+  liveLogger: LiveEventLogger
+) {
+  const profileUrl = typeof lead.linkedin_url === 'string' ? lead.linkedin_url.trim() : '';
+  if (!profileUrl) {
+    throw new Error('Lead linkedin_url is missing');
+  }
+
+  await liveLogger.emit('navigation', `Navigating to ${profileUrl}`);
+  await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForSelector('h1', { timeout: 12000 });
+  const h1Text = (await page.locator('h1').first().textContent().catch(() => '')) || '';
+  await liveLogger.emit('page_ready', `Profile loaded — "${h1Text.trim()}"`, { url: page.url() });
+  await page.waitForTimeout(3000);
+  await injectCursor(page);
 }
 
 export async function runCampaignForProfile(
@@ -197,13 +223,39 @@ async function executeStepsForLead(
           break;
 
         case 'follow_profile':
-          result = await followProfile(page);
+          {
+            const liveLogger = new LiveEventLogger(supabase as any, runId, lead.id);
+            try {
+              await prepareProfileForVision(page, lead, liveLogger);
+              result = await visionFollowProfile(page, lead, supabase as any, liveLogger);
+              if (!result.success) {
+                throw new Error(result.error || 'Vision follow failed');
+              }
+            } catch (error) {
+              await liveLogger.emit(
+                'action_failed',
+                `Vision follow failed — using fallback: ${error instanceof Error ? error.message : String(error)}`
+              );
+              result = await followProfile(page);
+            }
+          }
           break;
 
         case 'send_connection': {
-          const rawNote = String(step.config.note || '');
-          const note = rawNote ? interpolate(rawNote, lead) : undefined;
-          result = await sendConnection(page, { note }, lead);
+          const liveLogger = new LiveEventLogger(supabase as any, runId, lead.id);
+          try {
+            await prepareProfileForVision(page, lead, liveLogger);
+            result = await visionSendConnection(page, lead, supabase as any, liveLogger);
+            if (!result.success) {
+              throw new Error(result.error || 'Vision connect failed');
+            }
+          } catch (error) {
+            await liveLogger.emit(
+              'action_failed',
+              `Vision connect failed — using fallback: ${error instanceof Error ? error.message : String(error)}`
+            );
+            result = await executeConnectAction(page, lead, supabase as any, undefined, runId);
+          }
           break;
         }
 
@@ -215,7 +267,24 @@ async function executeStepsForLead(
         }
 
         case 'check_connection': {
-          result = await checkConnection(page);
+          const liveLogger = new LiveEventLogger(supabase as any, runId, lead.id);
+          try {
+            result = await visionCheckConnectionAccepted(page, lead, supabase as any, liveLogger);
+            if (!result.success) {
+              throw new Error(result.error || 'Vision connection check failed');
+            }
+          } catch (error) {
+            await liveLogger.emit(
+              'action_failed',
+              `Vision check failed — using fallback: ${error instanceof Error ? error.message : String(error)}`
+            );
+            try {
+              await prepareProfileForVision(page, lead, liveLogger);
+            } catch {
+              // best effort before fallback checker
+            }
+            result = await checkConnection(page);
+          }
           if (!result.isConnected && step.config.notConnectedGoToStep !== undefined) {
             currentStepIdx = Number(step.config.notConnectedGoToStep);
             continue;
