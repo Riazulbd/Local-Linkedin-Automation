@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Page } from 'playwright';
 import type { LiveEventEmitter } from '../../lib/LiveEventLogger';
 
@@ -80,41 +82,146 @@ Modal detection:
 
 Return ONLY raw JSON. No markdown. No explanation. No code fences.`;
 
-const VISION_USER_PROMPT = `Analyze this LinkedIn profile screenshot and return this exact JSON structure:
+const VISION_USER_PROMPT = `Analyze this LinkedIn profile screenshot and return this exact JSON structure.
 
+IMPORTANT COORDINATE RULES:
+- The screenshot is 1360 × 638 pixels
+- The global navigation bar (search bar) occupies y: 0 to y: 52 — NEVER return button coordinates in this range
+- Profile action buttons (Connect, Follow, Message, More) are always located between y: 300 and y: 450
+- x coordinates for action buttons are typically between x: 600 and x: 1300 (right side of profile header)
+- Return CENTER pixel coordinates of each button
+
+Example of correct output for a typical LinkedIn profile at 1360px width:
 {
-  "connection_degree": "1st|2nd|3rd|unknown",
-  "connection_status": "not_connected|pending|connected|following|no_connect_option",
+  "connection_degree": "2nd",
+  "connection_status": "not_connected",
   "is_already_invited": false,
   "is_connected": false,
   "is_following": false,
-  "connect_button_location": "direct|in_more_dropdown|not_found",
-  "recommended_action": "connect|follow|message|none",
+  "connect_button_location": "direct",
+  "recommended_action": "connect",
   "buttons": [
+    {
+      "label": "Follow",
+      "action": "follow",
+      "x": 820,
+      "y": 362,
+      "confidence": 0.96,
+      "visible": true,
+      "inside_dropdown": false
+    },
     {
       "label": "Connect",
       "action": "connect",
-      "x": 1055,
-      "y": 27,
-      "confidence": 0.98,
+      "x": 940,
+      "y": 362,
+      "confidence": 0.97,
+      "visible": true,
+      "inside_dropdown": false
+    },
+    {
+      "label": "More",
+      "action": "more",
+      "x": 1060,
+      "y": 362,
+      "confidence": 0.94,
       "visible": true,
       "inside_dropdown": false
     }
   ],
   "modal_present": false,
   "modal_buttons": [],
-  "notes": "describe what you see"
+  "notes": "2nd degree profile, Connect button visible directly in action bar at y≈362"
 }
 
 Rules:
-- x and y must be CENTER pixel coordinates of each button
-- Only include buttons you can clearly see
-- confidence: 0.0 to 1.0 — how certain you are about location
-- If Connect is hidden in More dropdown, set connect_button_location to "in_more_dropdown"
-- If a modal is open, list ALL buttons inside it in modal_buttons
-- is_already_invited = true only if you see a "Pending" button`;
+- NEVER return y values below 52 for action buttons — that is the nav bar
+- action buttons are between y: 300 and y: 450
+- If you see a "Pending" button, set is_already_invited to true
+- If "Message" is the primary action button, set connection_degree to "1st" and is_connected to true
+- If Connect is not visible but More button is present, set connect_button_location to "in_more_dropdown"
+- If a modal dialog covers the screen, set modal_present to true and list modal buttons in modal_buttons
+- confidence: how certain you are about the button position (0.0 to 1.0)`;
 
 const DEFAULT_VIEWPORT = { width: 1340, height: 660 };
+const NAV_BAR_BOTTOM = 52;
+const ACTION_BAR_MIN_Y = 280;
+const ACTION_BAR_MAX_Y = 500;
+
+function getDebugDir(): string {
+  const debugDir = path.join(process.cwd(), 'debug-screenshots');
+  fs.mkdirSync(debugDir, { recursive: true });
+  return debugDir;
+}
+
+function sanitizeDebugId(value: string): string {
+  const cleaned = value.trim().replace(/[^a-zA-Z0-9_-]+/g, '_');
+  return cleaned || 'unknown';
+}
+
+function saveDebugScreenshot(screenshotBuffer: Buffer, leadId: string, stamp: number): string | null {
+  try {
+    const debugDir = getDebugDir();
+    const filePath = path.join(debugDir, `vision-${sanitizeDebugId(leadId)}-${stamp}.png`);
+    fs.writeFileSync(filePath, screenshotBuffer);
+    return filePath;
+  } catch (error) {
+    console.warn('[Vision] Failed to save debug screenshot', error);
+    return null;
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function saveDebugOverlay(
+  screenshotBuffer: Buffer,
+  buttons: VisionButton[],
+  leadId: string,
+  stamp: number
+): string | null {
+  try {
+    const base64 = screenshotBuffer.toString('base64');
+    const dots = buttons
+      .map(
+        (button) =>
+          `<div style="position:absolute;left:${button.x - 8}px;top:${button.y - 8}px;width:16px;height:16px;background:red;border-radius:50%;border:2px solid white;font-size:10px;color:white;text-align:center;line-height:16px;" title="${escapeHtml(button.label)} (${button.x},${button.y})">${button.confidence > 0.8 ? '✓' : '?'}</div>`
+      )
+      .join('');
+
+    const labels = buttons
+      .map(
+        (button) =>
+          `<div style="position:absolute;left:${button.x + 10}px;top:${button.y - 8}px;background:rgba(0,0,0,0.8);color:white;font-size:11px;padding:2px 6px;border-radius:3px;white-space:nowrap">${escapeHtml(button.label)} (${button.x},${button.y}) ${Math.round(button.confidence * 100)}%</div>`
+      )
+      .join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#000">
+  <div style="position:relative;display:inline-block">
+    <img src="data:image/png;base64,${base64}" style="display:block"/>
+    ${dots}
+    ${labels}
+  </div>
+</body>
+</html>`;
+
+    const debugDir = getDebugDir();
+    const filePath = path.join(debugDir, `overlay-${sanitizeDebugId(leadId)}-${stamp}.html`);
+    fs.writeFileSync(filePath, html);
+    return filePath;
+  } catch (error) {
+    console.warn('[Vision] Failed to save debug overlay', error);
+    return null;
+  }
+}
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
@@ -275,6 +382,36 @@ function sanitizeVisionState(raw: Record<string, unknown>): VisionProfileState {
   };
 }
 
+function validateVisionResult(state: VisionProfileState, logger: LiveEventEmitter): VisionProfileState {
+  const invalidButtons = state.buttons.filter((button) => button.y < NAV_BAR_BOTTOM);
+  if (invalidButtons.length > 0) {
+    console.warn('[Vision] WARNING: AI returned buttons in nav bar area (y < 52):', invalidButtons);
+    void logger.emit('button_not_found', `Rejected ${invalidButtons.length} button(s) in nav bar area`, {
+      rejected: invalidButtons.map((button) => `${button.label} at (${button.x}, ${button.y})`),
+    });
+  }
+
+  const outOfActionBand = state.buttons.filter(
+    (button) => button.y >= NAV_BAR_BOTTOM && (button.y < ACTION_BAR_MIN_Y || button.y > ACTION_BAR_MAX_Y)
+  );
+  if (outOfActionBand.length > 0) {
+    console.warn('[Vision] WARNING: buttons outside expected action band (y 280-500):', outOfActionBand);
+    void logger.emit('ai_call_start', `Vision found ${outOfActionBand.length} button(s) outside action band`, {
+      out_of_band: outOfActionBand.map((button) => `${button.label} at (${button.x}, ${button.y})`),
+    });
+  }
+
+  const validButtons = state.buttons.filter((button) => {
+    if (button.y < NAV_BAR_BOTTOM) {
+      console.warn(`[Vision] Rejecting button "${button.label}" at y=${button.y} — inside nav bar`);
+      return false;
+    }
+    return true;
+  });
+
+  return { ...state, buttons: validButtons };
+}
+
 function safeClip(page: Page, captureRegion?: { x: number; y: number; width: number; height: number }) {
   const viewport = page.viewportSize() ?? DEFAULT_VIEWPORT;
   const candidate = captureRegion ?? {
@@ -305,6 +442,11 @@ export async function analyzeProfileWithVision(
   const screenshotBuffer = await page.screenshot({ type: 'png', clip });
   const base64Image = screenshotBuffer.toString('base64');
   const sizeKB = Math.round(base64Image.length / 1024);
+  const debugStamp = Date.now();
+  const screenshotPath = saveDebugScreenshot(screenshotBuffer, leadId, debugStamp);
+  if (screenshotPath) {
+    await logger.emit('ai_call_start', `Screenshot saved: ${screenshotPath} (${sizeKB}KB)`);
+  }
 
   await logger.emit('ai_call_start', `Screenshot ready — ${sizeKB}KB, sending to GPT-4o Vision`);
 
@@ -405,14 +547,22 @@ export async function analyzeProfileWithVision(
       return null;
     }
 
-    const state = sanitizeVisionState(parsed);
+    const rawState = sanitizeVisionState(parsed);
+    const state = validateVisionResult(rawState, logger);
+    const rejectedCount = rawState.buttons.length - state.buttons.length;
 
-    await logger.emit('ai_call_success', 'Vision analysis complete', {
+    const overlayPath = saveDebugOverlay(screenshotBuffer, state.buttons, leadId, debugStamp);
+    if (overlayPath) {
+      await logger.emit('ai_call_start', `Debug overlay saved: ${overlayPath}`);
+    }
+
+    await logger.emit('ai_call_success', `Vision buttons after validation: ${state.buttons.length}`, {
+      rejected: rejectedCount,
+      buttons: state.buttons.map((button) => `${button.label} at (${button.x},${button.y})`),
       degree: state.connection_degree,
       status: state.connection_status,
       connect_location: state.connect_button_location,
       recommended: state.recommended_action,
-      buttons_found: state.buttons.length,
       modal_present: state.modal_present,
     });
 

@@ -3,6 +3,10 @@ import type { ActionResult, Lead } from '../../../types';
 import type { LiveEventEmitter } from '../../lib/LiveEventLogger';
 import { analyzeProfileWithVision, type VisionButton, type VisionProfileState } from './visionDetector';
 
+const NAV_BAR_BOTTOM = 52;
+const ACTION_BAR_MIN_Y = 280;
+const ACTION_BAR_MAX_Y = 500;
+
 function normalizeProfileUrl(url: string): string {
   return url.replace(/[?#].*$/, '').replace(/\/+$/, '');
 }
@@ -53,6 +57,38 @@ function pickModalButton(
     state.modal_buttons.find((button) => button.visible && button.confidence >= minConfidence && matcher(button)) ||
     null
   );
+}
+
+function validateVisionResult(state: VisionProfileState, logger: LiveEventEmitter): VisionProfileState {
+  const invalidButtons = state.buttons.filter((button) => button.y < NAV_BAR_BOTTOM);
+  if (invalidButtons.length > 0) {
+    console.warn('[Vision] WARNING: AI returned buttons in nav bar area (y < 52):', invalidButtons);
+    void logger.emit('button_not_found', `Rejected ${invalidButtons.length} nav-bar button(s)`, {
+      rejected: invalidButtons.map((button) => `${button.label} at (${button.x}, ${button.y})`),
+    });
+  }
+
+  const outOfActionBand = state.buttons.filter(
+    (button) => button.y >= NAV_BAR_BOTTOM && (button.y < ACTION_BAR_MIN_Y || button.y > ACTION_BAR_MAX_Y)
+  );
+  if (outOfActionBand.length > 0) {
+    void logger.emit('ai_call_start', `Vision found ${outOfActionBand.length} button(s) outside y 280-500`, {
+      out_of_band: outOfActionBand.map((button) => `${button.label} at (${button.x}, ${button.y})`),
+    });
+  }
+
+  const validButtons = state.buttons.filter((button) => {
+    if (button.y < NAV_BAR_BOTTOM) {
+      console.warn(`[Vision] Rejecting button "${button.label}" at y=${button.y} — inside nav bar`);
+      return false;
+    }
+    return true;
+  });
+
+  return {
+    ...state,
+    buttons: validButtons,
+  };
 }
 
 export async function injectCursor(page: Page): Promise<void> {
@@ -122,7 +158,8 @@ async function handlePostConnectModals(
 ) {
   await page.waitForTimeout(1500);
   await logger.emit('ai_call_start', 'Checking for post-connect modals with vision');
-  const state = await analyzeProfileWithVision(page, supabase, leadId, logger);
+  const rawState = await analyzeProfileWithVision(page, supabase, leadId, logger);
+  const state = rawState ? validateVisionResult(rawState, logger) : null;
 
   if (!state?.modal_present || state.modal_buttons.length === 0) {
     await logger.emit('modal_dismissed', 'No modal detected after connect');
@@ -145,7 +182,8 @@ async function handlePostConnectModals(
   }
 
   await page.waitForTimeout(1000);
-  const nextState = await analyzeProfileWithVision(page, supabase, leadId, logger);
+  const rawNextState = await analyzeProfileWithVision(page, supabase, leadId, logger);
+  const nextState = rawNextState ? validateVisionResult(rawNextState, logger) : null;
   if (nextState?.modal_present) {
     const notNow = pickModalButton(
       nextState,
@@ -166,10 +204,24 @@ export async function visionSendConnection(
   supabase: any,
   logger: LiveEventEmitter
 ): Promise<ActionResult> {
-  const state = await analyzeProfileWithVision(page, supabase, lead.id, logger);
-  if (!state) {
+  await page.waitForSelector('h1', { timeout: 12000 });
+
+  try {
+    await page.waitForSelector(
+      'button[aria-label*="connect"], button[aria-label*="Connect"], .pvs-profile-actions button',
+      { timeout: 8000 }
+    );
+    await logger.emit('page_ready', 'Action buttons confirmed rendered');
+  } catch {
+    await logger.emit('page_ready', 'Action buttons selector timed out — waiting 5s');
+    await page.waitForTimeout(5000);
+  }
+
+  const rawState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
+  if (!rawState) {
     throw new Error('Vision analysis failed');
   }
+  const state = validateVisionResult(rawState, logger);
 
   const detectedDegree = state.connection_degree;
   const nowIso = new Date().toISOString();
@@ -267,10 +319,11 @@ export async function visionSendConnection(
     await page.waitForTimeout(1500);
 
     await logger.emit('ai_call_start', 'Dropdown opened — re-analyzing with vision');
-    const dropdownState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
-    if (!dropdownState) {
+    const rawDropdownState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
+    if (!rawDropdownState) {
       throw new Error('Vision failed on dropdown screenshot');
     }
+    const dropdownState = validateVisionResult(rawDropdownState, logger);
 
     connectButton = pickButton(
       dropdownState,
@@ -323,10 +376,11 @@ export async function visionFollowProfile(
   supabase: any,
   logger: LiveEventEmitter
 ): Promise<ActionResult> {
-  const state = await analyzeProfileWithVision(page, supabase, lead.id, logger);
-  if (!state) {
+  const rawState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
+  if (!rawState) {
     throw new Error('Vision analysis failed');
   }
+  const state = validateVisionResult(rawState, logger);
 
   if (state.is_following) {
     await logger.emit('state_connected', 'Already following this profile');
@@ -358,7 +412,8 @@ export async function visionFollowProfile(
       await visionClick(page, moreButton, logger);
       await page.waitForTimeout(1500);
 
-      const dropdownState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
+      const rawDropdownState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
+      const dropdownState = rawDropdownState ? validateVisionResult(rawDropdownState, logger) : null;
       followButton =
         dropdownState &&
         pickButton(
@@ -417,8 +472,8 @@ export async function visionCheckConnectionAccepted(
   await page.waitForSelector('h1', { timeout: 12000 });
   await page.waitForTimeout(3000);
 
-  const state = await analyzeProfileWithVision(page, supabase, lead.id, logger);
-  if (!state) {
+  const rawState = await analyzeProfileWithVision(page, supabase, lead.id, logger);
+  if (!rawState) {
     await logger.emit('ai_call_failed', 'Vision failed during connection check');
     return {
       success: false,
@@ -428,6 +483,7 @@ export async function visionCheckConnectionAccepted(
       data: { degree: 'unknown', status: 'check_failed' },
     };
   }
+  const state = validateVisionResult(rawState, logger);
 
   await logger.emit('ai_call_success', 'Connection check result', {
     degree: state.connection_degree,
